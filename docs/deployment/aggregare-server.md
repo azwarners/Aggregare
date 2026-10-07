@@ -39,8 +39,9 @@ cd "$HOME/Aggregare"
 
 The script checks for Ubuntu 26.04 and installs Ansible Core if needed. It asks
 whether Memos should be reachable by other devices on your private LAN, then
-runs the existing Memos Ansible playbook. Type your `sudo` password when
-Ansible asks for it. The script does not install Git as a setup step.
+runs the existing Memos Ansible playbook with administrator access. Type your
+normal Ubuntu `sudo` password when the installer asks. The script does not
+install Git as a setup step.
 
 The first run installs Podman because the Memos playbook deploys Memos as a
 container. Podman is an optional deployment tool for selected applications,
