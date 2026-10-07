@@ -37,11 +37,19 @@ cd "$HOME/Aggregare"
 ./install.sh
 ```
 
-The script checks for Ubuntu 26.04 and installs Ansible Core if needed. It asks
-whether Memos should be reachable by other devices on your private LAN, then
-runs the existing Memos Ansible playbook with administrator access. Type your
-normal Ubuntu `sudo` password when the installer asks. The script does not
-install Git as a setup step.
+The script checks for Ubuntu 26.04, installs Ansible Core if needed, and
+installs and starts OpenSSH Server. If UFW is already active, it allows SSH
+from the server's private LAN subnet. It does not enable UFW. The installer
+prints an `ssh` command you can run from your own computer once the server is
+ready. It asks whether Memos should be reachable by other devices on your
+private LAN, then runs the existing Memos Ansible playbook with administrator
+access. Type your normal Ubuntu `sudo` password when the installer asks. The
+script does not install Git as a setup step.
+
+For example, if the installer prints `ssh nick@192.168.1.25`, run that command
+in a terminal on your computer. The computer and server must be on a network
+that can reach each other. A VM using NAT may need a bridged network adapter
+for direct LAN access.
 
 The first run installs Podman because the Memos playbook deploys Memos as a
 container. Podman is an optional deployment tool for selected applications,
@@ -65,9 +73,11 @@ not directly reachable from another computer.
 
 If you answer yes, the script binds Memos to a private IPv4 address on the
 server's default network interface. It prints the address to open, for example
-`http://192.168.1.25:5230/`. Existing firewall rules are left unchanged. If
-UFW blocks LAN connections, the script prints a LAN-scoped rule for port 5230.
-The script does not enable a firewall or configure router port forwarding.
+`http://192.168.1.25:5230/`. If UFW is active, the installer adds an SSH rule
+scoped to the private LAN subnet. It leaves other firewall rules unchanged and
+does not enable a firewall. If UFW blocks Memos connections, the script prints
+a LAN-scoped rule for port 5230. The script does not configure router port
+forwarding.
 
 For a VM, its network adapter must allow other devices on your LAN to reach
 the VM. A NAT-only virtual network may hide it from the LAN; use a bridged

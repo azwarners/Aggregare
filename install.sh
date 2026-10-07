@@ -75,12 +75,38 @@ printf '\nAggregare Server v%s bootstrap\n' "$AGGREGARE_VERSION"
 printf 'This installs Memos as one example application through its Ansible playbook.\n'
 printf 'Other applications remain available through their direct Ansible playbooks.\n\n'
 
+PACKAGES_TO_INSTALL=()
 if ! command -v ansible-playbook >/dev/null 2>&1; then
-  printf 'Ansible Core is missing. I will install it now.\n'
+  PACKAGES_TO_INSTALL+=(ansible-core)
+fi
+if ! dpkg-query -W -f='${Status}' openssh-server 2>/dev/null | grep -q 'install ok installed'; then
+  PACKAGES_TO_INSTALL+=(openssh-server)
+fi
+
+if ((${#PACKAGES_TO_INSTALL[@]} > 0)); then
+  printf 'I will install the server packages: %s\n' "${PACKAGES_TO_INSTALL[*]}"
   sudo apt update
-  sudo apt install -y ansible-core
+  sudo apt install -y "${PACKAGES_TO_INSTALL[@]}"
 fi
 command -v ansible-playbook >/dev/null 2>&1 || fail "Ansible Core could not be installed."
+sudo systemctl enable --now ssh
+
+SSH_LAN_ADDRESS=""
+SSH_LAN_SUBNET=""
+if detect_lan_address; then
+  SSH_LAN_ADDRESS="$LAN_ADDRESS"
+  SSH_LAN_SUBNET="$LAN_SUBNET"
+  if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q '^Status: active$'; then
+    sudo ufw allow from "$SSH_LAN_SUBNET" to "$SSH_LAN_ADDRESS" port 22 proto tcp comment 'Aggregare SSH from private LAN'
+  fi
+fi
+
+printf '\nOpenSSH is installed and running. Connect from another computer with:\n'
+if [[ -n "$SSH_LAN_ADDRESS" ]]; then
+  printf 'ssh %s@%s\n' "$(id -un)" "$SSH_LAN_ADDRESS"
+else
+  printf 'I could not detect a private LAN address; check the server network before connecting.\n'
+fi
 
 LAN_ACCESS=false
 LAN_ADDRESS=127.0.0.1
