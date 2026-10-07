@@ -134,7 +134,7 @@
 
     - name: Verify ComfyUI web endpoint
       ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ comfyui_port }}/"
+        url: "http://{{ comfyui_host }}:{{ comfyui_port }}/"
         status_code: 200
       register: comfyui_health
       retries: 24
@@ -154,5 +154,5 @@
             'state': 'running',
             'version': comfyui_version,
             'deployment': {'backend': 'ansible', 'method': 'native-python', 'service': 'comfyui.service'},
-            'verification': {'status': 'passed', 'endpoint': 'http://127.0.0.1:' ~ (comfyui_port | string) ~ '/'}
+            'verification': {'status': 'passed', 'endpoint': 'http://' ~ comfyui_host ~ ':' ~ (comfyui_port | string) ~ '/'}
           } | to_nice_json }}

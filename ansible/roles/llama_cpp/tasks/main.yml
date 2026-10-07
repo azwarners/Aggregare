@@ -130,7 +130,7 @@
 
     - name: Verify inference endpoint when a model is present
       ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ llama_cpp_port }}/health"
+        url: "http://{{ llama_cpp_host }}:{{ llama_cpp_port }}/health"
         status_code: 200
       register: llama_cpp_health
       retries: 12
@@ -151,5 +151,5 @@
             'state': 'running' if llama_cpp_model.stat.isreg else 'installed',
             'version': llama_cpp_version,
             'deployment': {'backend': 'ansible', 'method': 'native-source', 'service': 'llama-cpp.service'},
-            'verification': {'status': 'passed', 'endpoint': 'http://127.0.0.1:' ~ (llama_cpp_port | string) ~ '/health'} if llama_cpp_model.stat.isreg else {'status': 'passed', 'check': 'llama-server --version'}
+            'verification': {'status': 'passed', 'endpoint': 'http://' ~ llama_cpp_host ~ ':' ~ (llama_cpp_port | string) ~ '/health'} if llama_cpp_model.stat.isreg else {'status': 'passed', 'check': 'llama-server --version'}
           } | to_nice_json }}

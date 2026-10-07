@@ -1,3 +1,5 @@
 __pycache__/
 *.py[cod]
 .venv/
+ansible/inventory.ini
+ansible/group_vars/aggregare/vault.yml

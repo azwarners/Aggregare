@@ -130,7 +130,7 @@
 
     - name: Verify Ysparr health endpoint
       ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ ysparr_port }}/health"
+        url: "http://{{ ysparr_host }}:{{ ysparr_port }}/health"
         method: GET
         status_code: 200
       register: ysparr_health
@@ -151,5 +151,5 @@
             'state': 'running',
             'version': ysparr_version,
             'deployment': {'backend': 'ansible', 'method': 'native-python', 'service': 'ysparr.service'},
-            'verification': {'status': 'passed', 'endpoint': 'http://127.0.0.1:' ~ (ysparr_port | string) ~ '/health'}
+            'verification': {'status': 'passed', 'endpoint': 'http://' ~ ysparr_host ~ ':' ~ (ysparr_port | string) ~ '/health'}
           } | to_nice_json }}

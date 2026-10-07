@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+set -u
+
+AGGREGARE_VERSION={{ aggregare_version | to_json }}
+AGGREGARE_DOCS={{ aggregare_docs_path | to_json }}
+
+cat <<'BANNER'
+    _                             __
+   /_\   __ _  __ _ _ __ ___  ___ / /__
+  //_\\ / _` |/ _` | '__/ _ \/ __/ / _ \
+ /  _  \ (_| | (_| | | |  __/ /_/ /  __/
+ \_/ \_/\__,_|\__, |_|  \___/\__/_/\___/
+              |___/
+BANNER
+
+printf '  Aggregare Server v%s\n\n' "$AGGREGARE_VERSION"
+
+HOSTNAME_VALUE="$(hostname 2>/dev/null || printf unknown)"
+OS_NAME="$(. /etc/os-release 2>/dev/null; printf '%s' "${PRETTY_NAME:-Ubuntu Server}")"
+LAN_ADDRESSES="$(hostname -I 2>/dev/null | xargs || true)"
+FAILED_UNITS="$(systemctl --failed --no-legend --plain 2>/dev/null | wc -l | tr -d ' ')"
+
+printf '  Host:       %s\n' "$HOSTNAME_VALUE"
+printf '  OS:         %s\n' "$OS_NAME"
+printf '  LAN:        %s\n' "${LAN_ADDRESSES:-not detected}"
+printf '  Failed:     %s systemd unit(s)\n' "${FAILED_UNITS:-unknown}"
+printf '\n'
+printf '  Server guide: %s\n' "$AGGREGARE_DOCS"
+printf '  Project:      https://github.com/azwarners/Aggregare\n'

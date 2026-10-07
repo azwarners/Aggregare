@@ -95,7 +95,7 @@
 
     - name: Verify application health endpoint
       ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ application_host_port }}{{ application_health_path }}"
+        url: "http://{{ application_bind_address }}:{{ application_host_port }}{{ application_health_path }}"
         method: GET
         status_code: 200
       register: application_health
@@ -116,5 +116,5 @@
             'state': 'running',
             'version': application_version,
             'deployment': {'backend': 'ansible', 'method': 'oci-container', 'service': application_id ~ '.service', 'image': application_image},
-            'verification': {'status': 'passed', 'endpoint': 'http://127.0.0.1:' ~ (application_host_port | string) ~ application_health_path}
+            'verification': {'status': 'passed', 'endpoint': 'http://' ~ application_bind_address ~ ':' ~ (application_host_port | string) ~ application_health_path}
           } | to_nice_json }}

@@ -14,3 +14,6 @@
   - name: Apply the shared OCI application role
     ansible.builtin.import_role:
       name: container_app
+  - name: Brand the server login message
+    ansible.builtin.import_role:
+      name: aggregare_welcome

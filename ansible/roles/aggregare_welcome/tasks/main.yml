@@ -1,0 +1,27 @@
+---
+- name: Find Ubuntu dynamic login message scripts
+  ansible.builtin.find:
+    paths: /etc/update-motd.d
+    file_type: file
+  register: aggregare_motd_scripts
+
+- name: Turn off Ubuntu dynamic login messages
+  ansible.builtin.command:
+    argv:
+      - chmod
+      - a-x
+      - "{{ item.path }}"
+  loop: "{{ aggregare_motd_scripts.files }}"
+  when:
+    - item.path != '/etc/update-motd.d/99-aggregare'
+    - item.mode[-3:] is search('[1357]')
+  changed_when: true
+
+- name: Install Aggregare login banner
+  ansible.builtin.template:
+    src: 99-aggregare.j2
+    dest: /etc/update-motd.d/99-aggregare
+    owner: root
+    group: root
+    mode: '0755'
+
