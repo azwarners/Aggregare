@@ -59,12 +59,13 @@ When the playbook finishes, check the service and its verification record:
 
 ```sh
 sudo systemctl status memos.service --no-pager
-curl --fail --silent --show-error http://127.0.0.1:5230/api/v1/ping
+curl --fail --silent --show-error http://127.0.0.1:5230/
 sudo cat /var/lib/aggregare/status/memos.json
 ```
 
 The service status should say `active`; the status record should report a
-passed verification.
+passed verification. If you chose LAN access, use the LAN address printed by
+the installer instead of `127.0.0.1` in the `curl` command.
 
 ## LAN access
 

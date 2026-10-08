@@ -97,11 +97,20 @@
       ansible.builtin.uri:
         url: "http://{{ application_bind_address }}:{{ application_host_port }}{{ application_health_path }}"
         method: GET
-        status_code: 200
+        status_code: [200, 400, 401, 403, 404]
       register: application_health
       retries: 24
       delay: 5
-      until: application_health.status == 200
+      until: application_health.status | default(0) == 200 or application_health.status | default(0) in [400, 401, 403, 404]
+
+    - name: Require a successful application health response
+      ansible.builtin.assert:
+        that:
+          - application_health.status == 200
+        fail_msg: >-
+          The application responded with HTTP {{ application_health.status }} at
+          {{ application_health.url }}. Check the configured health path and
+          application logs.
 
     - name: Write machine-readable application status
       ansible.builtin.copy:

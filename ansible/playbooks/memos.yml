@@ -9,7 +9,7 @@
     application_container_port: 5230
     application_data_path: /var/lib/aggregare/memos
     application_container_data_path: /var/opt/memos
-    application_health_path: /api/v1/ping
+    application_health_path: /
   tasks:
   - name: Apply the shared OCI application role
     ansible.builtin.import_role:
