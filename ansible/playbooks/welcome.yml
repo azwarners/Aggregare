@@ -1,0 +1,6 @@
+---
+- name: Configure the Aggregare server login message
+  hosts: aggregare
+  become: true
+  roles:
+    - aggregare_welcome

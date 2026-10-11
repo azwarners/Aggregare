@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aggregaos.invalid/schemas/v1/execution-request.schema.json",
+  "$id": "https://aggregare.invalid/schemas/v1/execution-request.schema.json",
   "title": "Bounded execution request (v1)",
   "type": "object",
   "required": ["task_id", "loop_owner", "goal", "scope", "limits", "allowed_tools"],

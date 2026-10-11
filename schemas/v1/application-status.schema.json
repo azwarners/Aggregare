@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aggregaos.invalid/schemas/v1/application-status.schema.json",
+  "$id": "https://aggregare.invalid/schemas/v1/application-status.schema.json",
   "title": "Aggregare application verification status (v1)",
   "type": "object",
   "required": ["schema_version", "application_id", "state", "version", "deployment", "verification"],

@@ -85,7 +85,7 @@
     },
     {
       "id": "standalone-third-party-app",
-      "description": "Install a third-party application directly without requiring AggregaOS, Ladcemas, or the rest of the stack.",
+      "description": "Install a third-party application directly without requiring Aggregare, Ladcemas, or the rest of the stack.",
       "application_id": "example.media",
       "installer": "ansible",
       "required_stack": [],

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aggregaos.invalid/schemas/v1/host.schema.json",
-  "title": "AggregaOS host record (v1)",
+  "$id": "https://aggregare.invalid/schemas/v1/host.schema.json",
+  "title": "Aggregare host record (v1)",
   "description": "A partial host inventory record. Discovery does not confer trust.",
   "type": "object",
   "required": ["host_id", "name", "connectivity"],

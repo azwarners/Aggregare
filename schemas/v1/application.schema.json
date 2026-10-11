@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aggregaos.invalid/schemas/v1/application.schema.json",
-  "title": "AggregaOS application catalog entry (v1)",
+  "$id": "https://aggregare.invalid/schemas/v1/application.schema.json",
+  "title": "Aggregare application catalog entry (v1)",
   "type": "object",
   "required": ["id", "source", "install_methods", "capabilities"],
   "properties": {

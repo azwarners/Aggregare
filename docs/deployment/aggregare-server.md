@@ -14,9 +14,10 @@ playbooks.
 You need:
 
 - A patched Ubuntu Server 26.04 machine with internet access.
-- A terminal on the server, or an SSH connection to it.
+- A terminal on the server for the first install (for example, the VM console). Aggregare sets up SSH for later remote access.
 - A normal Ubuntu user account that can run `sudo` commands.
 - A few gigabytes of free disk space for Memos and its container.
+- Git to clone the Aggregare repository. If needed, install it from the VM console with `sudo apt update && sudo apt install -y git`.
 
 Keep your VM backup. Memos data is stored under `/var/lib/aggregare/memos/`
 and is preserved when its service is removed.
@@ -37,19 +38,20 @@ cd "$HOME/Aggregare"
 ./install.sh
 ```
 
-The script checks for Ubuntu 26.04, installs Ansible Core if needed, and
-installs and starts OpenSSH Server. If UFW is already active, it allows SSH
-from the server's private LAN subnet. It does not enable UFW. The installer
-prints an `ssh` command you can run from your own computer once the server is
-ready. It asks whether Memos should be reachable by other devices on your
-private LAN, then runs the existing Memos Ansible playbook with administrator
-access. Type your normal Ubuntu `sudo` password when the installer asks. The
-script does not install Git as a setup step.
+The script checks for Ubuntu 26.04, installs Ansible Core and OpenSSH Server
+if needed, starts SSH, and runs the Memos playbook locally on this same server
+using a localhost inventory. A separate control machine or SSH connection is
+not needed for this first install. If UFW is already active, the installer
+allows SSH only from the server's private LAN subnet; it does not enable UFW.
+The script prints an SSH command for later terminal access from another
+computer. It asks whether Memos should be reachable by other devices on your
+private LAN, then applies the playbook with administrator access. Type your
+normal Ubuntu `sudo` password when the installer asks. The script does not
+install Git as a setup step.
 
-For example, if the installer prints `ssh nick@192.168.1.25`, run that command
-in a terminal on your computer. The computer and server must be on a network
-that can reach each other. A VM using NAT may need a bridged network adapter
-for direct LAN access.
+For later terminal access, run the printed `ssh username@address` command from
+a computer that can reach the VM. If the VM uses NAT, a bridged virtual network
+adapter may be needed for direct LAN access.
 
 The first run installs Podman because the Memos playbook deploys Memos as a
 container. Podman is an optional deployment tool for selected applications,
@@ -74,11 +76,11 @@ not directly reachable from another computer.
 
 If you answer yes, the script binds Memos to a private IPv4 address on the
 server's default network interface. It prints the address to open, for example
-`http://192.168.1.25:5230/`. If UFW is active, the installer adds an SSH rule
-scoped to the private LAN subnet. It leaves other firewall rules unchanged and
-does not enable a firewall. If UFW blocks Memos connections, the script prints
-a LAN-scoped rule for port 5230. The script does not configure router port
-forwarding.
+`http://192.168.1.25:5230/`. If UFW is active, the installer adds a separate
+SSH rule scoped to the server's private LAN subnet; it leaves other rules
+unchanged and does not enable a firewall. If UFW blocks Memos connections, the
+script prints a LAN-scoped rule for port 5230. It does not configure router
+port forwarding.
 
 For a VM, its network adapter must allow other devices on your LAN to reach
 the VM. A NAT-only virtual network may hide it from the LAN; use a bridged
@@ -88,8 +90,9 @@ ports from your router to the public internet.
 ## Install another application directly
 
 Each application has a playbook in `ansible/playbooks/`. The bootstrap creates
-`ansible/inventory.ini` for this local server and leaves it in place so you can
-run additional playbooks. For example, to install Beszel:
+`ansible/inventory.ini` with `localhost ansible_connection=local` and leaves it
+in place so you can run additional playbooks directly on this server. For
+example, to install Beszel:
 
 ```sh
 cd "$HOME/Aggregare/ansible"

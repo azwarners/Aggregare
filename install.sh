@@ -130,22 +130,34 @@ localhost ansible_connection=local
 EOF
 fi
 
-EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$AGGREGARE_VERSION" "$PROJECT_ROOT/docs/deployment/aggregare-server.md" <<'PY'
+MEMOS_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" <<'PY'
 import json
 import sys
 
 print(json.dumps({
     "application_bind_address": sys.argv[1],
     "ansible_become": False,
-    "aggregare_version": sys.argv[2],
-    "aggregare_docs_path": sys.argv[3],
+}))
+PY
+)"
+
+WELCOME_EXTRA_VARS="$(python3 - "$AGGREGARE_VERSION" "$PROJECT_ROOT/docs/deployment/aggregare-server.md" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "ansible_become": False,
+    "aggregare_version": sys.argv[1],
+    "aggregare_docs_path": sys.argv[2],
 }))
 PY
 )"
 
 cd "$ANSIBLE_DIR"
 sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/memos.yml \
-  --extra-vars "$EXTRA_VARS"
+  --extra-vars "$MEMOS_EXTRA_VARS"
+sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/welcome.yml \
+  --extra-vars "$WELCOME_EXTRA_VARS"
 
 printf '\nMemos installation finished. Its status record is /var/lib/aggregare/status/memos.json.\n'
 printf 'The Aggregare login banner is installed; log out and back in to see it.\n'

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aggregaos.invalid/schemas/v1/execution-result.schema.json",
+  "$id": "https://aggregare.invalid/schemas/v1/execution-result.schema.json",
   "title": "Structured execution result (v1)",
   "type": "object",
   "required": ["task_id", "loop_owner", "status"],

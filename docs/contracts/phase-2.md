@@ -6,11 +6,12 @@ The catalog records ownership, upstream, version/reference, platform support, de
 
 ## Direct Ansible use
 
-Install Ansible Core on the Ubuntu control machine (for example, `sudo apt install ansible-core`) and Podman only for the container-backed applications. Copy `ansible/inventory.ini.example` to `ansible/inventory.ini`, remove groups you do not use, and replace example hosts with the intended Ubuntu targets. The normal server roles require Ubuntu 24.04 or later. TroubleShell is a desktop application and currently targets Ubuntu 26.04; keep it in the separate `[desktop]` group. Run commands from the `ansible/` directory so `ansible.cfg` resolves the local roles:
+The documented `./install.sh` bootstrap runs on the Ubuntu server itself. It installs Ansible Core if needed, creates a localhost inventory, and applies the Memos and Aggregare welcome playbooks locally as separate runs; the first install does not depend on SSH. A direct Memos run only configures Memos. The installer also provisions OpenSSH for later remote terminal access and Ansible management. For direct remote Ansible use, install Ansible Core on the controller machine, copy `ansible/inventory.ini.example` to `ansible/inventory.ini`, and replace example hosts with intended Ubuntu targets. SSH must be available on each remote target. This supports multi-host Ansible administration; Ladcemas orchestration remains blocked until its catalog entry has an installable role. Podman is needed only for container-backed applications. The normal server roles require Ubuntu 24.04 or later. TroubleShell is a desktop application and currently targets Ubuntu 26.04; keep it in the separate `[desktop]` group. Run commands from the `ansible/` directory so `ansible.cfg` resolves the local roles:
 
 ```sh
 cd ansible
 ansible-playbook -i inventory.ini playbooks/memos.yml
+ansible-playbook -i inventory.ini playbooks/welcome.yml
 ```
 
 `playbooks/site.yml` installs every catalog entry with an implemented Ansible path. It includes all three listed AI applications (llama.cpp, ComfyUI, and LocalLightChat), along with the productivity, automation, and monitoring candidates. It omits Ladcemas and Sidecaravan, whose current upstream repositories do not contain installable application code. Add the `[desktop]` workstation when running the site playbook.

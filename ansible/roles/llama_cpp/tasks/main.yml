@@ -114,14 +114,14 @@
         name: llama-cpp.service
         enabled: true
         state: "{{ 'restarted' if (llama_cpp_source.changed or llama_cpp_build.changed or llama_cpp_unit.changed) else 'started' }}"
-      when: llama_cpp_model.stat.isreg
+      when: llama_cpp_model.stat.isreg | default(false)
 
     - name: Keep the service stopped until a model is supplied
       ansible.builtin.systemd_service:
         name: llama-cpp.service
         enabled: false
         state: stopped
-      when: not llama_cpp_model.stat.isreg
+      when: not (llama_cpp_model.stat.isreg | default(false))
 
     - name: Verify the llama-server binary
       ansible.builtin.command:
@@ -136,7 +136,7 @@
       retries: 12
       delay: 5
       until: llama_cpp_health.status == 200
-      when: llama_cpp_model.stat.isreg
+      when: llama_cpp_model.stat.isreg | default(false)
 
     - name: Write machine-readable llama.cpp status
       ansible.builtin.copy:
@@ -148,8 +148,8 @@
           {{ {
             'schema_version': 'v1',
             'application_id': 'llama-cpp',
-            'state': 'running' if llama_cpp_model.stat.isreg else 'installed',
+            'state': 'running' if (llama_cpp_model.stat.isreg | default(false)) else 'installed',
             'version': llama_cpp_version,
             'deployment': {'backend': 'ansible', 'method': 'native-source', 'service': 'llama-cpp.service'},
-            'verification': {'status': 'passed', 'endpoint': 'http://' ~ llama_cpp_host ~ ':' ~ (llama_cpp_port | string) ~ '/health'} if llama_cpp_model.stat.isreg else {'status': 'passed', 'check': 'llama-server --version'}
+            'verification': {'status': 'passed', 'endpoint': 'http://' ~ llama_cpp_host ~ ':' ~ (llama_cpp_port | string) ~ '/health'} if (llama_cpp_model.stat.isreg | default(false)) else {'status': 'passed', 'check': 'llama-server --version'}
           } | to_nice_json }}

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aggregaos.invalid/schemas/v1/adapter-result.schema.json",
+  "$id": "https://aggregare.invalid/schemas/v1/adapter-result.schema.json",
   "title": "Management integration adapter and invocation result (v1)",
   "type": "object",
   "required": ["integration", "availability", "supported_operations", "authentication", "result"],
