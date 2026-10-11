@@ -1,6 +1,6 @@
 # Phase 2 verification record
 
-Status: repository checks and live application verification on `aggregare-dev` are recorded below. Production is outside this product verification scope.
+Status: repository checks and live application verification on a clean Ubuntu Server 26.04 test VM are recorded below. Production deployments are outside this product verification scope.
 
 ## Local checks
 
@@ -17,7 +17,7 @@ These local checks do not establish live installation behavior.
 
 ## Live Ubuntu verification
 
-Target: `aggregare-dev`, Ubuntu Server 26.04. Results below were captured from Nick's terminal transcripts on 2026-10-11 (America/Phoenix); exact command times were not recorded. The VM checkout is based on revision `56948e3462e5d80aa2803e60346fac382cdc56fb` with working-tree changes copied in. The initial bootstrap configured SSH; application playbooks ran locally through the localhost inventory. Ubuntu 26.04's default `sudo-rs` timed out with Ansible become, so live runs used `/usr/bin/sudo.ws` via `-e ansible_become_exe=/usr/bin/sudo.ws`.
+Target: clean Ubuntu Server 26.04 test VM. Results below were captured during live Phase 2 verification on 2026-10-11; exact command times were not recorded. The VM used the current Aggregare working tree copied into the test environment. The initial bootstrap configured SSH; application playbooks ran locally through the localhost inventory. Ubuntu 26.04's default `sudo-rs` timed out with Ansible become during direct playbook testing, so those runs used `/usr/bin/sudo.ws` via `-e ansible_become_exe=/usr/bin/sudo.ws`.
 
 ### Console-only setup and applications
 
@@ -89,19 +89,18 @@ llama.cpp builds CPU software and remains stopped without a model. Its status re
 | Memos | Third-party productivity | `0.31.0`, image `ghcr.io/usememos/memos:0.31.0` | Installed by bootstrap; recap not captured | Passed after one directory normalization (`changed=0`, `failed=0`) | Port changed to `5231`, then restored to `5230`; applies passed. Memos playbook was separated from welcome role during this test. | `memos.service` active; `http://127.0.0.1:5230/` returned Memos HTML; status says `running`, verification `passed` | Passed: removal (`changed=3`) stopped service; `/var/lib/aggregare/memos` remained `root:root`, mode `0750`; service inactive | Passed: reinstall (`changed=3`); service active and endpoint/status verified |
 | llama.cpp | AI runtime | Status version `0.5.0`; binary `0.5.0-dev` (build 11146, commit `7fe450e19`) | Built; first run stopped at missing-model check because `stat.isreg` was undefined. Role now defaults the missing field to false; retry passed (`changed=1`, status written) | Passed (`changed=0`, `failed=0`) | N/A | `llama-server --version` passed; status says `installed` and version check passed; service inactive and disabled without a model | N/A | N/A |
 
-The Aggregare welcome role now has its own `welcome.yml` playbook. It ran independently on `aggregare-dev` with `changed=1` on the first apply and `changed=0` on the second. Memos runs no longer invoke it. The installer was updated to run Memos and welcome as separate playbooks; the updated installer itself has not yet been rerun on the VM.
+The Aggregare welcome role now has its own `welcome.yml` playbook. It ran independently on the test VM with `changed=1` on the first apply and `changed=0` on the second. Memos runs no longer invoke it. After these changes, the current installer was rerun from a clean pre-Aggregare Ubuntu Server 26.04 snapshot. The bootstrap installed Ansible Core and enabled OpenSSH, installed and verified Memos in its own play (`ok=10`, `changed=5`, `failed=0`), then applied the welcome role as a separate play (`ok=4`, `changed=2`, `failed=0`). The bootstrap completed successfully with Memos bound to loopback.
 
-The live results above are based on operator-provided terminal output. Exact command times were not captured. Capture machine-readable status records from `/var/lib/aggregare/status/` when completing the evidence bundle. Do not record credentials, tokens, or secret values.
+The live results above are based on captured terminal output from the test VM. Exact command times were not captured. Machine-readable status records are written under `/var/lib/aggregare/status/`. Credentials, tokens, LAN addresses, usernames, hostnames, and other environment-specific values are intentionally excluded from this verification record.
 
 The three applications have different resource needs: llama.cpp builds from source and requires an operator-supplied model to verify its inference endpoint; its install/status check is recorded separately from inference readiness.
 
 ## Verification environment
 
-- `aggregare-dev`: live application verification completed as recorded above on Ubuntu Server 26.04.
-- `aggregare-prod`: not used for this issue's tests. Production testing is not required to verify Aggregare behavior and should happen only when Nick requests production troubleshooting or a deliberate promotion.
+Live application verification was completed on a disposable Ubuntu Server 26.04 test VM. Production deployments were not used for this issue's tests and are not required to establish product-level Phase 2 acceptance.
 
-Use `aggregare-dev` for product verification. Keep any production deployment decision and checks separate from this issue's acceptance.
+Future product verification should use a non-production test environment. Keep deployment-specific production decisions and checks separate from this verification record.
 
 ## Known limits
 
-The live steps above require access to a clean Ubuntu target and the operator's virtualization host. Repository checks do not imply VM activity or production changes. Record unsupported behavior and failures rather than marking an application verified.
+The live steps above require access to a clean Ubuntu target. Repository checks alone do not imply successful live installation. Record unsupported behavior and failures rather than marking an application verified.
