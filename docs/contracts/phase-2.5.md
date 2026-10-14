@@ -15,6 +15,66 @@ provider is currently installed or provisioned by Aggregare. Apps without
 federation need a documented, secure bootstrap path. Do not describe the app
 set as SSO-enabled unless each app supports the configured flow.
 
+## Identity DNS and TLS boundary
+
+Each deployment administrator chooses a stable DNS namespace and configures
+its identity service name, issuer URL, and trusted HTTPS origin independently
+for each environment. Aggregare does not own a domain or prescribe a suffix.
+Keep dev and prod names, provider configuration, CA state, client IDs, and
+secrets separate. The issuer URL is the provider's canonical OIDC issuer
+(including any provider-specific path); the browser-facing identity origin is
+the HTTPS origin users visit. They may share a hostname, but clients must use
+the exact issuer advertised by the provider's discovery document. Configure
+these values in protected environment inventory, not in reusable application
+roles or installation wiring.
+
+An administrator may use LAN-only names under `home.arpa` as specified by
+[RFC 8375](https://www.rfc-editor.org/rfc/rfc8375), or a subdomain of a
+registered domain they control. These are supported choices, not requirements.
+`.net` is a public top-level domain, not a private LAN suffix; do not invent
+names beneath it for private use. With a registered domain, split-horizon DNS
+can return private addresses inside the LAN while the public DNS view remains
+independent. Private DNS does not require services to be exposed to the public
+Internet.
+
+TLS trust has two supported patterns. A private CA can issue certificates for
+LAN names, provided administrators securely distribute its public root to
+every browser and service client that must validate those certificates and
+protect the CA signing key. Alternatively, publicly trusted certificates can
+be used for names under an administrator-controlled registered domain; DNS
+validation (for example, ACME DNS-01) can issue certificates without opening
+the service to inbound Internet traffic. DNS control and public certificate
+issuance do not imply public service exposure. Certificate renewal and trust
+distribution must be tested for every client runtime, including containers.
+
+For Kanidm, choose the configured identity domain and origin before enrolling
+users or registering clients, and preserve them as durable environment
+configuration. Kanidm uses the domain and origin in security-sensitive
+identity and WebAuthn contexts. Renaming after enrollment can invalidate
+passkeys and OAuth tokens, require OIDC client reconfiguration, and lock users
+out. Treat a rename as a planned identity migration: back up first, follow
+Kanidm's domain-rename procedure, plan credential recovery/re-enrollment, and
+update every relying party. Before deployment, validate that the configured
+FQDN resolves from clients and service containers, the certificate covers the
+configured HTTPS origin, each client trusts its issuer certificate, and the
+provider's OIDC discovery document returns the exact configured issuer and
+HTTPS endpoints. Do not enroll users or applications until those checks pass.
+See Kanidm's guidance on [choosing a domain name](https://kanidm.github.io/kanidm/stable/choosing_a_domain_name.html)
+and [renaming a domain](https://kanidm.github.io/kanidm/stable/domain_rename.html).
+
+For the current Ansible integration, HabitSync's pre-task assertions reject
+missing or non-HTTPS base and issuer URLs, trailing slashes, malformed provider
+slugs, and empty client IDs before the application role runs. This is a
+configuration sanity check, not proof of DNS resolution, certificate trust,
+or discovery correctness; perform those network and TLS checks separately.
+
+Ownership is split across work items: #11 validates the identity endpoint and
+this contract; #12 handles general DNS resolver distribution and endpoint
+policy. This contract does not deploy site DNS, select a site namespace, or
+provision a provider. Example inventory values below and elsewhere in this
+repository are documentation fixtures only and must be replaced for each
+environment.
+
 ## Inspect login requirements
 
 From the repository root, list catalogued login and first-run setup:

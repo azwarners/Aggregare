@@ -5,6 +5,13 @@ OIDC provider selected outside Aggregare. It uses temporary host-file entries
 and Caddy's internal CA. It does not configure permanent DNS, VPN DNS, router
 access, or Internet access; those belong to Phase 2.75.
 
+The names in the checked-in dev and prod inventories are fixtures under the
+RFC 8375 `home.arpa` namespace, not Aggregare's required domain or a live site
+configuration. Replace the namespace and all hostnames independently in each
+protected environment inventory before use. See the [identity DNS and TLS
+contract](../contracts/phase-2.5.md#identity-dns-and-tls-boundary) for domain
+choices, trust models, and identity-domain stability requirements.
+
 The provider is not installed or provisioned by Aggregare. Configure an issuer
 URL and client ID in the protected external inventory, and store any required
 confidential-client secret in that environment's encrypted Vault file. The

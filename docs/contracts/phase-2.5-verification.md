@@ -1,5 +1,14 @@
 # Phase 2.5 live verification record
 
+## 2026-10-13: issue #14 identity DNS and TLS contract
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Deployment-neutral DNS/TLS and Kanidm stability contract | Passed | Reviewed `docs/contracts/phase-2.5.md`; documents per-environment configuration, LAN and registered-domain options, private/public certificate trust, issuer checks, migration risks, and #11/#12 ownership. |
+| Site-specific names in reusable logic | Passed | Source review found the `home.arpa` examples only in dev/dev-client/prod inventory fixtures; the contract and HTTPS guide identify them as replaceable examples. No `azw.home.arpa` or `aggregare.home.arpa` dependency exists in reusable application logic, role defaults, or install wiring. |
+| Existing endpoint configuration checks | Passed | Reviewed `ansible/playbooks/habitsync.yml`; pre-tasks require HTTPS base and issuer URLs, no trailing slash, a valid provider slug, and a nonempty client ID before application deployment. |
+| Live DNS, certificate, discovery, or identity migration | Not run | This change is contract and source verification only; no environment or identity provider was deployed or modified. |
+
 This record contains outcomes only. It intentionally excludes private IP
 addresses, credentials, client IDs, Vault contents, and CA private material.
 All live changes in this record target aggregare-dev; production and router
