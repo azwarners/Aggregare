@@ -85,7 +85,8 @@ not directly reachable from another computer.
 
 If you answer yes, the script binds Memos to a private IPv4 address on the
 server's default network interface. It prints the address to open, for example
-`http://192.168.1.25:5230/`. If UFW is active, the installer adds a separate
+`http://192.0.2.25:5230/` (replace this documentation-only address with the
+server's private address). If UFW is active, the installer adds a separate
 SSH rule scoped to the server's private LAN subnet; it leaves other rules
 unchanged and does not enable a firewall. If UFW blocks Memos connections, the
 script prints a LAN-scoped rule for port 5230. It does not configure router
@@ -115,10 +116,10 @@ server's LAN address, pass that address explicitly; for example:
 ```sh
 ansible-playbook -i inventory.ini playbooks/beszel.yml \
   --ask-become-pass \
-  -e application_bind_address=192.168.1.25
+  -e application_bind_address=192.0.2.25
 ```
 
-Replace `192.168.1.25` with the server's private address. UFW rules, if needed,
+Replace the documentation-only address with the server's private address. UFW rules, if needed,
 must be limited to the private LAN subnet. Native services use their
 application-specific host variable (`ysparr_host`, `comfyui_host`, or
 `llama_cpp_host`).

@@ -1,9 +1,9 @@
-# Documentation-only values. Replace the IP with this environment's reserved
-# LAN address before using the copied inventory.
+# Documentation-only values. Replace the reserved documentation address with
+# this environment's private LAN address before using the copied inventory.
 aggregare_environment: dev
 aggregare_lan_address: 192.0.2.10
 aggregare_lan_subnet: 192.0.2.0/24
-aggregare_private_zone: dev.aggregare.home.arpa
+aggregare_private_zone: dev.example.invalid
 
 habitsync_base_url: "https://habitsync.{{ aggregare_private_zone }}"
 aggregare_oidc_provider:

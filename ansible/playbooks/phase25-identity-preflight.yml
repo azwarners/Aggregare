@@ -1,0 +1,36 @@
+---
+- name: Validate configured identity DNS and TLS before enrollment
+  hosts: aggregare
+  gather_facts: false
+  tasks:
+    - name: Require configured identity origin and issuer
+      ansible.builtin.assert:
+        that:
+          - identity_preflight_origin is defined
+          - identity_preflight_issuer is defined
+          - identity_preflight_origin | default('') | length > 0
+          - identity_preflight_issuer | default('') | length > 0
+        fail_msg: Set identity_preflight_origin and identity_preflight_issuer in the selected environment inventory.
+
+    - name: Build preflight arguments
+      ansible.builtin.set_fact:
+        identity_preflight_args: >-
+          --origin {{ identity_preflight_origin | quote }}
+          --issuer {{ identity_preflight_issuer | quote }}
+          --format json
+          {% if identity_preflight_cafile is defined and identity_preflight_cafile | length > 0 %}
+          --cafile {{ identity_preflight_cafile | quote }}
+          {% endif %}
+          {% for container in identity_preflight_containers | default([]) %}
+          --container {{ container | quote }}
+          {% endfor %}
+
+    - name: Run identity DNS and TLS preflight on the selected host
+      ansible.builtin.script:
+        cmd: "{{ playbook_dir }}/../../tools/aggregare-identity-preflight {{ identity_preflight_args }}"
+      register: identity_preflight_result
+      changed_when: false
+
+    - name: Show identity preflight report
+      ansible.builtin.debug:
+        msg: "{{ identity_preflight_result.stdout | from_json }}"

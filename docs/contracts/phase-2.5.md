@@ -67,6 +67,9 @@ missing or non-HTTPS base and issuer URLs, trailing slashes, malformed provider
 slugs, and empty client IDs before the application role runs. This is a
 configuration sanity check, not proof of DNS resolution, certificate trust,
 or discovery correctness; perform those network and TLS checks separately.
+Use the [identity DNS and TLS preflight](../deployment/identity-dns-tls-preflight.md)
+to check the configured origin and issuer from the host and explicitly selected
+service containers before enrolling users or applications.
 
 Ownership is split across work items: #11 validates the identity endpoint and
 this contract; #12 handles general DNS resolver distribution and endpoint
@@ -105,10 +108,10 @@ variables, and credentials in its encrypted Vault file. Never reuse signing
 keys or application secrets between environments.
 
 ```sh
-cp -a ansible/inventory-examples/dev /secure/config/aggregare-dev
-chmod -R go-rwx /secure/config/aggregare-dev
-ansible-vault create /secure/config/aggregare-dev/group_vars/aggregare/vault.yml
-chmod 600 /secure/config/aggregare-dev/group_vars/aggregare/vault.yml
+cp -a ansible/inventory-examples/dev /secure/config/dev-environment
+chmod -R go-rwx /secure/config/dev-environment
+ansible-vault create /secure/config/dev-environment/group_vars/aggregare/vault.yml
+chmod 600 /secure/config/dev-environment/group_vars/aggregare/vault.yml
 ```
 
 Example values:
@@ -136,7 +139,7 @@ not prove an old credential was revoked.
 ## First-run account setup
 
 The initial productivity set is HabitSync, Memos, and Vikunja. Memos and
-Vikunja were already running on aggregare-dev. A temporary Caddy HTTPS edge is
+Vikunja were already running on the development host. A temporary Caddy HTTPS edge is
 available on that dev host for testing. Earlier Phase 2.5 work also deployed
 Pocket ID 2.18.0 and exercised its health and discovery endpoints, but its
 playbooks, catalog entry, inventory wiring, and provider-specific guide have
@@ -166,7 +169,7 @@ do not delete user data as part of this source change.
 
 ## Temporary HTTPS prerequisites
 
-Phase 2.5 testing on aggregare-dev uses a dev-only Caddy internal CA,
+Phase 2.5 testing on a development host uses a dev-only Caddy internal CA,
 persistent state under `/var/lib/aggregare/phase-2.5/`, and temporary
 host-file records. Do not use this configuration on production.
 
@@ -177,7 +180,7 @@ Before a browser login test:
    names to the dev server so apps can reach HTTPS endpoints inside containers.
 2. Import the public Caddy root certificate into the client's trusted root CA
    store, then restart the browser. The certificate is public; the private CA
-   key and persistent state stay on aggregare-dev and out of the repo.
+   key and persistent state stay on the development host and out of the repo.
 3. Ensure app containers trust that CA. The dev setup mounts the system CA
    bundle into Go-based apps and Java's trust store into HabitSync.
 4. Open services only over configured HTTPS names. Do not expose the temporary
@@ -203,14 +206,14 @@ names and supported token lifecycle steps.
 
 ## Initial live test set
 
-The current Phase 2.5 live evaluation is aggregare-dev only. Use the protected
+The current Phase 2.5 live evaluation is limited to a development environment. Use the protected
 external dev inventory; never use prod or the full `site.yml` for these checks.
 Record first apply, health result, real browser login/recovery result, and
 reapply behavior without recording secret values.
 
 ```sh
 cd ansible
-ansible-playbook -i ~/.config/aggregare/phase25-dev/hosts.ini --limit aggregare-dev playbooks/habitsync.yml --vault-password-file ~/.config/aggregare/phase25-dev/vault-password
+ansible-playbook -i /secure/config/dev-environment/hosts.ini --limit dev-host playbooks/habitsync.yml --ask-vault-pass
 ```
 
 Repeat the playbook and expect no identity reset or account duplication. Keep

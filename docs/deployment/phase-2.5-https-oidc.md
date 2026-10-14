@@ -1,16 +1,16 @@
-# Phase 2.5 HTTPS and OIDC test on aggregare-dev
+# Phase 2.5 HTTPS and OIDC test on a development environment
 
 This guide covers temporary LAN-only HTTPS for testing an application with an
 OIDC provider selected outside Aggregare. It uses temporary host-file entries
 and Caddy's internal CA. It does not configure permanent DNS, VPN DNS, router
 access, or Internet access; those belong to Phase 2.75.
 
-The names in the checked-in dev and prod inventories are fixtures under the
-RFC 8375 `home.arpa` namespace, not Aggregare's required domain or a live site
-configuration. Replace the namespace and all hostnames independently in each
-protected environment inventory before use. See the [identity DNS and TLS
-contract](../contracts/phase-2.5.md#identity-dns-and-tls-boundary) for domain
-choices, trust models, and identity-domain stability requirements.
+The checked-in dev and prod inventories use the reserved `example.invalid`
+namespace as documentation fixtures, not as Aggregare's required domain or a
+live site configuration. Replace the namespace and all hostnames independently
+in each protected environment inventory before use. See the [identity DNS and
+TLS contract](../contracts/phase-2.5.md#identity-dns-and-tls-boundary) for
+domain choices, trust models, and identity-domain stability requirements.
 
 The provider is not installed or provisioned by Aggregare. Configure an issuer
 URL and client ID in the protected external inventory, and store any required
@@ -19,12 +19,12 @@ application contract remains provider-neutral.
 
 ## Test boundary and stored state
 
-- Run these steps against the dev inventory and `--limit aggregare-dev` only.
+- Run these steps against the dev inventory and `--limit dev-host` only.
 - Keep the inventory, encrypted Vault file, Vault password, Caddy CA state,
   provider data, and app data outside the source checkout and separate from
   production.
 - Caddy CA state is under `/var/lib/aggregare/phase-2.5/caddy-data`. Its
-  private key stays on aggregare-dev. The exported `caddy-root.crt` is public
+  private key stays on the development host. The exported `caddy-root.crt` is public
   and safe to distribute to test clients.
 - The temporary HTTPS edge binds only the dev host's private LAN address on
   TCP 443. It installs no HTTP listener, changes no router settings, and must
@@ -38,10 +38,10 @@ documentation-only address with the dev host's private address and subnet, and
 create the encrypted Vault file:
 
 ```sh
-cp -a ansible/inventory-examples/dev /secure/config/aggregare-dev
-chmod -R go-rwx /secure/config/aggregare-dev
-ansible-vault create /secure/config/aggregare-dev/group_vars/aggregare/vault.yml
-chmod 600 /secure/config/aggregare-dev/group_vars/aggregare/vault.yml
+cp -a ansible/inventory-examples/dev /secure/config/dev-environment
+chmod -R go-rwx /secure/config/dev-environment
+ansible-vault create /secure/config/dev-environment/group_vars/aggregare/vault.yml
+chmod 600 /secure/config/dev-environment/group_vars/aggregare/vault.yml
 ```
 
 Use unique, persistent dev values for application secrets. Keep the encrypted
@@ -51,12 +51,12 @@ your selected provider.
 
 ## 2. Install the temporary HTTPS edge
 
-From the Aggregare checkout on aggregare-dev, run:
+From the Aggregare checkout root, run:
 
 ```sh
-cd /home/nick/ServerData/repos/Aggregare/ansible
-ansible-playbook -i /secure/config/aggregare-dev/hosts.ini \
-  --limit aggregare-dev playbooks/phase25-dev-edge.yml --ask-vault-pass
+cd ansible
+ansible-playbook -i /secure/config/dev-environment/hosts.ini \
+  --limit dev-host playbooks/phase25-dev-edge.yml --ask-vault-pass
 ```
 
 The playbook adds test names to the server's hosts file and sets up Caddy with
@@ -70,10 +70,12 @@ On Linux, copy the generated hosts entries and public root certificate from
 the dev host. Append the entries to `/etc/hosts`, then trust the public root:
 
 ```sh
-scp nick@<dev-lan-address>:/var/lib/aggregare/phase-2.5/hosts.entries ./aggregare-dev-hosts.entries
-sudo sh -c 'cat ./aggregare-dev-hosts.entries >> /etc/hosts'
-scp nick@<dev-lan-address>:/var/lib/aggregare/phase-2.5/caddy-root.crt ./aggregare-dev-caddy-root.crt
-sudo install -m 0644 aggregare-dev-caddy-root.crt /usr/local/share/ca-certificates/aggregare-dev-caddy-root.crt
+REMOTE_USER='<remote-user>'
+DEV_HOST='<dev-host-or-address>'
+scp "${REMOTE_USER}@${DEV_HOST}:/var/lib/aggregare/phase-2.5/hosts.entries" ./dev-hosts.entries
+sudo sh -c 'cat ./dev-hosts.entries >> /etc/hosts'
+scp "${REMOTE_USER}@${DEV_HOST}:/var/lib/aggregare/phase-2.5/caddy-root.crt" ./dev-caddy-root.crt
+sudo install -m 0644 dev-caddy-root.crt /usr/local/share/ca-certificates/dev-caddy-root.crt
 sudo update-ca-certificates
 ```
 
@@ -91,8 +93,8 @@ application's local recovery path enabled.
 For HabitSync, apply the playbook with the dev inventory:
 
 ```sh
-ansible-playbook -i /secure/config/aggregare-dev/hosts.ini \
-  --limit aggregare-dev playbooks/habitsync.yml \
+ansible-playbook -i /secure/config/dev-environment/hosts.ini \
+  --limit dev-host playbooks/habitsync.yml \
   --ask-become-pass --ask-vault-pass
 ```
 
