@@ -8,11 +8,33 @@ PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ANSIBLE_DIR="$PROJECT_ROOT/ansible"
 INVENTORY_FILE="$ANSIBLE_DIR/inventory.ini"
 VERSION_FILE="$PROJECT_ROOT/VERSION"
+IDENTITY_CONFIG_FILE="/etc/aggregare/identity.json"
+IDENTITY_PROVIDER=""
+
+while (($#)); do
+  case "$1" in
+    --identity-provider)
+      (($# >= 2)) || { printf 'Installer stopped: --identity-provider needs kanidm, external_oidc, or none.\n' >&2; exit 2; }
+      IDENTITY_PROVIDER="$2"
+      shift 2
+      ;;
+    --help|-h)
+      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none]\n'
+      exit 0
+      ;;
+    *) printf 'Installer stopped: unknown option: %s\n' "$1" >&2; exit 2 ;;
+  esac
+done
 
 fail() {
   printf 'Installer stopped: %s\n' "$*" >&2
   exit 1
 }
+
+case "$IDENTITY_PROVIDER" in
+  ""|kanidm|external_oidc|none) ;;
+  *) printf 'Installer stopped: invalid identity provider "%s"; choose kanidm, external_oidc, or none.\n' "$IDENTITY_PROVIDER" >&2; exit 2 ;;
+esac
 
 ask_yes_no() {
   local answer
@@ -24,6 +46,35 @@ ask_yes_no() {
       *) printf 'Please type y or n.\n' ;;
     esac
   done
+}
+
+select_identity_provider() {
+  local saved_provider=""
+  if [[ -r "$IDENTITY_CONFIG_FILE" ]]; then
+    saved_provider="$(python3 "$PROJECT_ROOT/tools/aggregare-identity-config" get-provider "$IDENTITY_CONFIG_FILE")" || fail "saved identity configuration is invalid; review $IDENTITY_CONFIG_FILE."
+  fi
+  if [[ -z "$IDENTITY_PROVIDER" && -n "$saved_provider" ]]; then
+    IDENTITY_PROVIDER="$saved_provider"
+    printf 'Using saved identity provider selection: %s\n' "$IDENTITY_PROVIDER"
+  elif [[ -z "$IDENTITY_PROVIDER" ]]; then
+    [[ -t 0 ]] || fail "identity provider selection is required in noninteractive mode; use --identity-provider kanidm, external_oidc, or none."
+    printf 'Select the identity provider configuration (this does not install an identity service):\n'
+    printf '  1) kanidm\n  2) external_oidc\n  3) none\n'
+    local choice
+    read -r -p 'Selection [3]: ' choice
+    case "${choice:-3}" in
+      1|kanidm) IDENTITY_PROVIDER=kanidm ;;
+      2|external_oidc) IDENTITY_PROVIDER=external_oidc ;;
+      3|none) IDENTITY_PROVIDER=none ;;
+      *) fail "invalid identity provider selection '$choice'; choose kanidm, external_oidc, or none." ;;
+    esac
+  fi
+  case "$IDENTITY_PROVIDER" in kanidm|external_oidc|none) ;; *) fail "invalid identity provider '$IDENTITY_PROVIDER'; choose kanidm, external_oidc, or none." ;; esac
+  local config_tmp
+  config_tmp="$(mktemp)"
+  python3 "$PROJECT_ROOT/tools/aggregare-identity-config" write "$IDENTITY_PROVIDER" "$config_tmp" || { rm -f "$config_tmp"; fail "could not prepare identity configuration."; }
+  sudo install -D -m 0644 "$config_tmp" "$IDENTITY_CONFIG_FILE" || { rm -f "$config_tmp"; fail "could not save identity configuration to $IDENTITY_CONFIG_FILE."; }
+  rm -f "$config_tmp"
 }
 
 confirm_host_time() {
@@ -103,6 +154,7 @@ source /etc/os-release
 command -v python3 >/dev/null 2>&1 || fail "Python 3 is required by Ubuntu and was not found."
 command -v ip >/dev/null 2>&1 || fail "the ip command is missing; install Ubuntu's iproute2 package first."
 confirm_host_time
+select_identity_provider
 
 printf '\nAggregare Server v%s bootstrap\n' "$AGGREGARE_VERSION"
 printf 'This installs Memos as one example application through its Ansible playbook.\n'
@@ -163,12 +215,13 @@ localhost ansible_connection=local
 EOF
 fi
 
-MEMOS_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" <<'PY'
+MEMOS_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" <<'PY'
 import json
 import sys
 
 print(json.dumps({
     "application_bind_address": sys.argv[1],
+    "aggregare_identity_provider": sys.argv[2],
     "ansible_become": False,
 }))
 PY
@@ -187,6 +240,8 @@ PY
 )"
 
 cd "$ANSIBLE_DIR"
+sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/phase25-identity-config.yml \
+  --extra-vars "aggregare_identity_provider=$IDENTITY_PROVIDER"
 sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/memos.yml \
   --extra-vars "$MEMOS_EXTRA_VARS"
 sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/welcome.yml \

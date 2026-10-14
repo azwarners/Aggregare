@@ -1,0 +1,15 @@
+---
+- name: Validate the selected optional identity provider
+  hosts: aggregare
+  gather_facts: false
+  tasks:
+    - name: Require a supported identity provider selection
+      ansible.builtin.assert:
+        that:
+          - aggregare_identity_provider is defined
+          - aggregare_identity_provider in ['kanidm', 'external_oidc', 'none']
+        fail_msg: Set aggregare_identity_provider to kanidm, external_oidc, or none in the selected inventory.
+
+    - name: Confirm identity selection without installing a provider
+      ansible.builtin.debug:
+        msg: "Identity provider selection is {{ aggregare_identity_provider }}; provider installation is not part of this configuration step."

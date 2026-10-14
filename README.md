@@ -8,7 +8,7 @@ Aggregare owns the application catalog, presets, installation/configuration comp
 
 ## Install Aggregare on Ubuntu Server
 
-Ready to set up a server? From an Ubuntu Server 26.04 checkout, run `./install.sh` to deploy Memos as a Phase 2 example. It asks whether Memos should be reachable over your private LAN. See the [step-by-step installation guide](docs/deployment/aggregare-server.md) for details. Application selection and presets are planned for the Phase 3 client.
+Ready to set up a server? From an Ubuntu Server 26.04 checkout, run `./install.sh` to deploy Memos as a Phase 2 example. It asks whether Memos should be reachable over your private LAN and which identity provider configuration to select. Pass `--identity-provider kanidm`, `--identity-provider external_oidc`, or `--identity-provider none` to set the choice directly. The non-secret choice is saved in `/etc/aggregare/identity.json` and reused on reapply unless overridden. For a noninteractive configuration-only run, set `aggregare_identity_provider` in the protected inventory and run `ansible-playbook -i INVENTORY playbooks/phase25-identity-config.yml`. This selection does not install or provision an identity provider. See the [step-by-step installation guide](docs/deployment/aggregare-server.md) for details. Application selection and presets are planned for the Phase 3 client.
 
 The shared contracts and end-to-end examples are in
 [`docs/contracts/phase-1.md`](docs/contracts/phase-1.md). The Phase 2 catalog

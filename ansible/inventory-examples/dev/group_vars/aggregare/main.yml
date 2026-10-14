@@ -4,6 +4,7 @@ aggregare_environment: dev
 aggregare_lan_address: 192.0.2.10
 aggregare_lan_subnet: 192.0.2.0/24
 aggregare_private_zone: dev.example.invalid
+aggregare_identity_provider: external_oidc
 
 habitsync_base_url: "https://habitsync.{{ aggregare_private_zone }}"
 aggregare_oidc_provider:

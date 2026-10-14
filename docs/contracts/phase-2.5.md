@@ -15,6 +15,20 @@ provider is currently installed or provisioned by Aggregare. Apps without
 federation need a documented, secure bootstrap path. Do not describe the app
 set as SSO-enabled unless each app supports the configured flow.
 
+The installer records the optional provider choice as schema version 1 in
+`/etc/aggregare/identity.json`, with `identity_provider` set to `kanidm`,
+`external_oidc`, or `none`. Pass `--identity-provider external_oidc` (or
+either other value) to `./install.sh` to set the choice directly; when the
+option is omitted, an existing value is reused, or a first interactive run
+prompts for a choice. For a noninteractive configuration-only Ansible run,
+set `aggregare_identity_provider` in the protected inventory and directly
+invoke the validation playbook. Direct Ansible users set
+`aggregare_identity_provider` in their protected environment inventory and
+can validate it with `ansible-playbook -i INVENTORY
+playbooks/phase25-identity-config.yml`. Missing and unsupported values fail
+with an assertion. This versioned selection does not install a provider;
+external OIDC configuration and provider lifecycle remain administrator-owned.
+
 ## Identity DNS and TLS boundary
 
 Each deployment administrator chooses a stable DNS namespace and configures
