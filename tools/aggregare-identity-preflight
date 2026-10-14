@@ -26,9 +26,18 @@ def resolve(host):
 
 
 def validate_url(value, label):
-    parsed = urlsplit(value)
+    if not isinstance(value, str) or not value or any(character.isspace() for character in value):
+        raise ValueError(f"{label} must be a non-empty HTTPS URL without whitespace")
+    try:
+        parsed = urlsplit(value)
+        # Accessing .port validates the URL's port syntax and range.
+        parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{label} is malformed: {exc}") from None
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         raise ValueError(f"{label} must be an HTTPS URL with a hostname and no embedded credentials")
+    if parsed.port == 0:
+        raise ValueError(f"{label} port must be between 1 and 65535")
     if parsed.fragment:
         raise ValueError(f"{label} must not contain a fragment")
     return parsed
@@ -83,7 +92,7 @@ def run_checks(origin, issuer, cafile):
         try:
             discovery, endpoints = fetch_discovery(issuer, cafile)
             checks.append({"name": "issuer_discovery", "status": "passed", "url": discovery,
-                           "https_endpoints": endpoints})
+                           "https_endpoint_fields": endpoints})
         except (OSError, ssl.SSLError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
             checks.append({"name": "issuer_discovery", "status": "failed", "url": issuer,
                            "detail": str(exc)})
@@ -102,11 +111,24 @@ def check_context(name, origin, issuer, cafile):
     try:
         result = subprocess.run(["podman", "exec", name, "python3", "-c", remote],
                                 capture_output=True, text=True, timeout=TIMEOUT * 3, check=False)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return [{"name": "container_preflight", "status": "failed", "detail": str(exc)}]
+    except subprocess.TimeoutExpired:
+        return [{"name": "container_preflight", "status": "failed",
+                 "detail": "Podman container preflight timed out; check container responsiveness and retry."}]
+    except FileNotFoundError:
+        return [{"name": "container_preflight", "status": "failed",
+                 "detail": "Podman is unavailable on this host; install Podman or omit --container checks."}]
+    except OSError as exc:
+        return [{"name": "container_preflight", "status": "failed", "detail": f"Podman could not run the container check: {exc}"}]
     if result.returncode:
         detail = result.stderr.strip() or f"podman exec exited {result.returncode}"
-        return [{"name": "container_preflight", "status": "failed", "detail": detail}]
+        missing_python = "python3" in detail.lower() and any(
+            marker in detail.lower() for marker in ("not found", "no such file", "executable file")
+        )
+        if missing_python:
+            return [{"name": "container_python", "status": "failed",
+                     "detail": "Python 3 is required inside the selected container to run its preflight."}]
+        return [{"name": "container_preflight", "status": "failed",
+                 "detail": f"Podman could not complete the container check: {detail}"}]
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError:
@@ -143,6 +165,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.cafile and not Path(args.cafile).is_file():
         parser.error("--cafile must name a readable CA bundle file")
+    try:
+        validate_url(args.origin, "origin")
+        validate_url(args.issuer, "issuer")
+    except ValueError as exc:
+        parser.error(str(exc))
     report = make_report(args.origin, args.issuer, args.cafile, args.container)
     if args.format == "json":
         json.dump(report, sys.stdout, indent=2)

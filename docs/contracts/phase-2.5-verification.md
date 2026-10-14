@@ -1,5 +1,18 @@
 # Phase 2.5 live verification record
 
+## 2026-10-13: issue #15 identity DNS and TLS preflight hardening
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Malformed URL and invalid port handling | Passed | CLI rejects malformed authority, nonnumeric/out-of-range/zero ports, whitespace, and embedded credentials with actionable argument errors and no traceback. |
+| Container execution reporting | Passed | Fixtures cover successful JSON output, missing Python 3, Podman nonzero exit, missing Podman executable, and execution timeout. |
+| OIDC advertised endpoint behavior | Passed | Discovery endpoint fields are checked for HTTPS scheme only; the individual advertised endpoints are not contacted. |
+| Automated verification | Passed | `python3 -m unittest discover -s tests -v` (19 tests), CLI `--help`, `git diff --check`, and Ansible playbook syntax check. |
+| Live identity DNS/TLS check | Not run | No live endpoint was selected for this focused hardening pass. No provider was deployed and no DNS, certificate, firewall, or router settings were changed. |
+
+This record contains outcomes only and excludes credentials, private IP
+addresses, and CA private material.
+
 ## 2026-10-13: issue #14 identity DNS and TLS contract
 
 | Check | Result | Evidence |

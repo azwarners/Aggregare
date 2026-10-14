@@ -18,11 +18,12 @@ private key.
 ```
 
 The report checks DNS and certificate chain, validity dates, and hostname
-coverage for both URL hosts. It also fetches the OIDC discovery document,
-requires its `issuer` to exactly match the configured issuer, and rejects
-discovery metadata that advertises HTTP endpoints. A nonzero exit status means
-at least one check failed. Use `--format json` for the versioned machine-readable
-report.
+coverage for both URL hosts. It also fetches the OIDC discovery document and
+requires its `issuer` to exactly match the configured issuer. For endpoint URLs
+advertised in that document, it checks only that each URL uses the HTTPS
+scheme; it does not contact those individual endpoints. A nonzero exit status
+means at least one check failed. Use `--format json` for the versioned
+machine-readable report.
 
 The host is always checked. To include a relevant running Podman container,
 repeat `--container` with its exact container name. The container needs Python 3

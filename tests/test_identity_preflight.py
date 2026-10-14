@@ -3,9 +3,10 @@ from importlib.machinery import SourceFileLoader
 import io
 import json
 from pathlib import Path
+import subprocess
 import unittest
 from unittest.mock import patch
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,10 +60,98 @@ class IdentityPreflightTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "non-HTTPS"):
                 preflight.fetch_discovery(issuer, None)
 
+    def test_discovery_checks_advertised_scheme_without_contacting_endpoints(self):
+        issuer = "https://id.example.test"
+        document = {"issuer": issuer,
+                    "authorization_endpoint": "https://id.example.test/authorize",
+                    "token_endpoint": "https://id.example.test/token"}
+        with patch.object(preflight.urllib.request, "urlopen") as open_url:
+            class Response:
+                status = 200
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    return False
+                def geturl(self):
+                    return issuer + "/.well-known/openid-configuration"
+                def read(self):
+                    return json.dumps(document).encode()
+            open_url.return_value = Response()
+            url, endpoint_fields = preflight.fetch_discovery(issuer, None)
+        self.assertEqual(url, issuer + "/.well-known/openid-configuration")
+        self.assertEqual(endpoint_fields, ["authorization_endpoint", "token_endpoint"])
+        self.assertEqual(open_url.call_count, 1)
+
     def test_urls_with_credentials_or_non_https_are_rejected(self):
         for value in ("http://id.example.test", "https://user:secret@id.example.test"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 preflight.validate_url(value, "issuer")
+
+    def test_malformed_urls_and_invalid_ports_raise_actionable_validation_errors(self):
+        cases = (
+            ("https://[broken", "malformed"),
+            ("https://id.example.test:abc", "malformed"),
+            ("https://id.example.test:70000", "malformed"),
+            ("https://id.example.test:0", "port must be between 1 and 65535"),
+            ("https://id.example.test/a path", "without whitespace"),
+        )
+        for value, message in cases:
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, message):
+                preflight.validate_url(value, "issuer")
+
+    def test_cli_reports_malformed_url_without_traceback(self):
+        error = io.StringIO()
+        with redirect_stderr(error), self.assertRaises(SystemExit) as raised:
+            preflight.main(["--origin", "https://id.example.test:bad", "--issuer", "https://id.example.test"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("origin is malformed", error.getvalue())
+        self.assertNotIn("Traceback", error.getvalue())
+
+    def test_container_execution_parses_successful_podman_output(self):
+        checks = [{"name": "issuer_tls", "status": "passed", "protocol": "TLSv1.3"}]
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(checks), stderr=""
+        )
+        with patch.object(preflight.subprocess, "run", return_value=completed) as run:
+            result = preflight.check_context(
+                "habitsync", "https://app.example.test", "https://id.example.test", None
+            )
+        self.assertEqual(result, checks)
+        self.assertEqual(run.call_args.args[0][:4], ["podman", "exec", "habitsync", "python3"])
+
+    def test_container_execution_reports_missing_python(self):
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=127, stdout="",
+            stderr='Error: exec: "python3": executable file not found in $PATH',
+        )
+        with patch.object(preflight.subprocess, "run", return_value=completed):
+            result = preflight.check_context(
+                "habitsync", "https://app.example.test", "https://id.example.test", None
+            )
+        self.assertEqual(result[0]["name"], "container_python")
+        self.assertIn("Python 3 is required", result[0]["detail"])
+
+    def test_container_execution_reports_podman_failures(self):
+        cases = (
+            ("return", subprocess.CompletedProcess(
+                args=[], returncode=125, stdout="", stderr="container not found"
+            ), "Podman could not complete"),
+            ("raise", FileNotFoundError("podman"), "Podman is unavailable"),
+            ("raise", subprocess.TimeoutExpired(cmd="podman exec", timeout=1), "timed out"),
+        )
+        for mode, outcome, message in cases:
+            with self.subTest(outcome=outcome):
+                patcher = patch.object(
+                    preflight.subprocess, "run",
+                    return_value=outcome if mode == "return" else None,
+                    side_effect=outcome if mode == "raise" else None,
+                )
+                with patcher:
+                    result = preflight.check_context(
+                        "habitsync", "https://app.example.test", "https://id.example.test", None
+                    )
+                self.assertEqual(result[0]["status"], "failed")
+                self.assertIn(message, result[0]["detail"])
 
     def test_cli_renders_json_and_human_output(self):
         report = {"schema_version": "v1", "status": "failed", "origin": "https://app.example.test",
