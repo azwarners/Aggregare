@@ -31,8 +31,8 @@
       "requirements": [
         "system:podman"
       ],
-      "reference": "vikunja/vikunja:2.6.0",
-      "image": "vikunja/vikunja:2.6.0"
+      "reference": "docker.io/vikunja/vikunja:2.6.0",
+      "image": "docker.io/vikunja/vikunja:2.6.0"
     }
   ],
   "platforms": [
@@ -73,5 +73,12 @@
     }
   ],
   "secret_references": [],
+  "authentication": {
+    "methods": ["local", "oidc", "api-token"],
+    "bootstrap": { "mode": "first-run-ui", "idempotent": false, "notes": "Create the initial user through the application UI; Aggregare does not create or reset user passwords." },
+    "token_lifecycle": ["generate", "revoke"],
+    "manual_steps": ["Open Vikunja and create/sign into a user account.", "Create API tokens under Settings > API Tokens for integrations; keep each token private."],
+    "oidc": { "supported": true, "notes": "Vikunja supports OpenID Connect, but provider configuration and identity linking are not implemented by Aggregare." }
+  },
   "integrations": []
 }

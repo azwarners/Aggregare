@@ -1,0 +1,16 @@
+---
+- name: Configure temporary dev-only HTTPS for Phase 2.5
+  hosts: aggregare
+  become: true
+  vars:
+    phase25_lan_address: "{{ aggregare_lan_address }}"
+    phase25_lan_subnet: "{{ aggregare_lan_subnet }}"
+    phase25_hosts_file: /etc/hosts
+    phase25_test_sites:
+      - { name: "habitsync.{{ aggregare_private_zone }}", upstream: "127.0.0.1:6842" }
+      - { name: "memos.{{ aggregare_private_zone }}", upstream: "127.0.0.1:5230" }
+      - { name: "vikunja.{{ aggregare_private_zone }}", upstream: "127.0.0.1:3456" }
+    phase25_test_names: "{{ phase25_test_sites | map(attribute='name') | list }}"
+    phase25_caddy_image: docker.io/library/caddy:2.11.7-alpine
+  roles:
+    - phase25_test_edge

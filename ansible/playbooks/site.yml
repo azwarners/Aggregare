@@ -11,7 +11,7 @@
 - import_playbook: sillytavern.yml
 - import_playbook: memos.yml
 - import_playbook: vikunja.yml
-- import_playbook: beaver.yml
+- import_playbook: habitsync.yml
 - import_playbook: semaphore.yml
 - import_playbook: beszel.yml
 - import_playbook: grafana.yml

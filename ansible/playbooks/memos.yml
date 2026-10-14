@@ -9,6 +9,10 @@
     application_container_port: 5230
     application_data_path: /var/lib/aggregare/memos
     application_container_data_path: /var/opt/memos
+    application_data_owner: '10001'
+    application_data_group: '10001'
+    application_environment:
+      MEMOS_INSTANCE_URL: "{{ memos_base_url | default('http://127.0.0.1:5230') }}"
     application_health_path: /
   tasks:
   - name: Apply the shared OCI application role

@@ -1,0 +1,103 @@
+{
+  "id": "habitsync",
+  "display_name": "HabitSync",
+  "description": "Self-hosted habit tracker with OIDC sign-in, goals, and shared challenges.",
+  "ownership": "third-party",
+  "category": "habits",
+  "source": {
+    "name": "jofoerster/habitsync",
+    "upstream": "https://github.com/jofoerster/habitsync"
+  },
+  "version": "0.19.3",
+  "status": "experimental",
+  "install_methods": ["oci-container"],
+  "capabilities": {
+    "install": true,
+    "update": true,
+    "remove": true,
+    "verify": true
+  },
+  "unsupported_operations": ["automatic-backup"],
+  "entry_point": "ansible/playbooks/habitsync.yml",
+  "deployments": [
+    {
+      "method": "oci-container",
+      "backend": "ansible",
+      "entry_point": "ansible/playbooks/habitsync.yml",
+      "requirements": ["system:podman"],
+      "reference": "ghcr.io/jofoerster/habitsync:0.19.3",
+      "image": "ghcr.io/jofoerster/habitsync:0.19.3"
+    }
+  ],
+  "platforms": [
+    {
+      "name": "ubuntu",
+      "versions": ["24.04"],
+      "architectures": ["amd64", "arm64"]
+    }
+  ],
+  "dependencies": ["system:podman"],
+  "conflicts": [],
+  "services": [
+    {
+      "name": "habitsync.service",
+      "ports": [6842],
+      "data_paths": ["/var/lib/aggregare/habitsync"],
+      "endpoints": ["http://127.0.0.1:6842/actuator/health"]
+    }
+  ],
+  "configuration": [
+    {
+      "name": "BASE_URL",
+      "type": "string",
+      "required": true,
+      "description": "User-facing HTTPS URL; must match OIDC callback configuration."
+    },
+    {
+      "name": "APP_SECURITY_ISSUERS_AGGREGARE_URL",
+      "type": "string",
+      "required": true,
+      "description": "HTTPS issuer URL for the chosen OIDC provider."
+    },
+    {
+      "name": "APP_SECURITY_ISSUERS_AGGREGARE_CLIENTID",
+      "type": "string",
+      "required": true,
+      "description": "OIDC public client ID; HabitSync uses PKCE and does not require a client secret for this issuer."
+    },
+    {
+      "name": "JWT_SECRET",
+      "type": "string",
+      "required": true,
+      "secret_reference": true,
+      "description": "Stable signing secret used to keep sessions valid across restarts; supply from a protected variable source."
+    }
+  ],
+  "secret_references": ["habitsync_jwt_secret"],
+  "authentication": {
+    "methods": ["oidc", "api-token"],
+    "bootstrap": {
+      "mode": "first-run-ui",
+      "idempotent": false,
+      "notes": "HabitSync accepts OIDC public clients with PKCE and supports approval for new users. User enrollment and approval remain deliberate first-run actions."
+    },
+    "token_lifecycle": ["generate", "revoke", "unknown"],
+    "manual_steps": [
+      "Register a public OIDC client with the selected provider using the exact HabitSync HTTPS callback URL.",
+      "Approve the first OIDC user in HabitSync when new-user approval is enabled.",
+      "Create and revoke API tokens in the user's profile when integrations need them."
+    ],
+    "oidc": {
+      "supported": true,
+      "callback_path": "/auth-callback",
+      "client_types": ["public"],
+      "pkce": true,
+      "pkce_methods": ["S256"],
+      "scopes": ["openid", "profile", "email"],
+      "local_recovery": true,
+      "verification": "untested",
+      "notes": "Upstream documents OIDC public clients using PKCE, multiple issuers, and optional new-user approval. Provider compatibility and account lifecycle still require live verification with the pinned image."
+    }
+  },
+  "integrations": []
+}

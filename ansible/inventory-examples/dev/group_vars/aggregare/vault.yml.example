@@ -1,0 +1,5 @@
+# Copy to vault.yml, replace every value, then encrypt the copy with
+# ansible-vault encrypt. Use unique values for this environment.
+habitsync_jwt_secret: "GENERATE-A-DIFFERENT-UNIQUE-KEY"
+habitsync_recovery_user: "nickrecovery"
+habitsync_recovery_password_hash: "GENERATE-A-BCRYPT-HASH-OF-A-UNIQUE-DEV-PASSWORD"

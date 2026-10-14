@@ -61,6 +61,7 @@
       loop:
         - { path: /opt/aggregare, owner: root, group: root, mode: '0755' }
         - { path: /opt/aggregare/venvs, owner: root, group: root, mode: '0755' }
+        - { path: /var/lib/aggregare, owner: root, group: root, mode: '0755' }
         - { path: /var/lib/aggregare/comfyui, owner: comfyui, group: comfyui, mode: '0750' }
         - { path: /var/lib/aggregare/comfyui/models, owner: comfyui, group: comfyui, mode: '0750' }
         - { path: /var/lib/aggregare/comfyui/input, owner: comfyui, group: comfyui, mode: '0750' }

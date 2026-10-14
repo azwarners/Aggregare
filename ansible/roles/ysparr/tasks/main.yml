@@ -72,6 +72,7 @@
       loop:
         - { path: /opt/aggregare, owner: root, group: root, mode: '0755' }
         - { path: /opt/aggregare/venvs, owner: root, group: root, mode: '0755' }
+        - { path: /var/lib/aggregare, owner: root, group: root, mode: '0755' }
         - { path: /var/lib/ysparr, owner: ysparr, group: ysparr, mode: '0750' }
         - { path: /var/lib/aggregare/status, owner: root, group: root, mode: '0755' }
         - { path: /etc/aggregare, owner: root, group: root, mode: '0750' }

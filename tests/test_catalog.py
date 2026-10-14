@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 import yaml
@@ -45,6 +47,14 @@ class CatalogContractTests(unittest.TestCase):
 
         self.assertEqual(len(app_ids), 17)
 
+    def test_pocket_id_is_not_part_of_a_fresh_install(self):
+        app_ids = {ref["id"] for ref in self.catalog["applications"]}
+        self.assertNotIn("pocket-id", app_ids)
+        site = (ROOT / "ansible/playbooks/site.yml").read_text()
+        self.assertNotIn("pocket-id.yml", site)
+        self.assertFalse((ROOT / "ansible/playbooks/pocket-id.yml").exists())
+        self.assertFalse((ROOT / "ansible/playbooks/phase25-pocket-id-client.yml").exists())
+
     def test_application_status_contract_accepts_catalog_verification_shape(self):
         Draft202012Validator.check_schema(self.status_schema)
         validator = Draft202012Validator(self.status_schema)
@@ -84,6 +94,42 @@ class CatalogContractTests(unittest.TestCase):
             for secret in entry.get("secret_references", []):
                 self.assertNotIn("=", secret)
                 self.assertNotIn(" ", secret)
+
+    def test_initial_productivity_apps_declare_authentication_state(self):
+        expected = {"habitsync", "memos", "vikunja"}
+        entries = {
+            ref["id"]: load_json(f"catalog/v1/{ref['path']}")
+            for ref in self.catalog["applications"]
+            if ref["id"] in expected
+        }
+        self.assertEqual(set(entries), expected)
+        for app_id, entry in entries.items():
+            with self.subTest(application=app_id):
+                self.assertIn("authentication", entry)
+                self.assertTrue(entry["authentication"]["methods"])
+                self.assertTrue(entry["authentication"]["manual_steps"])
+
+    def test_auth_cli_json_report_includes_productivity_apps_without_secrets(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "tools/aggregare-auth"),
+                "habitsync",
+                "memos",
+                "vikunja",
+                "--format",
+                "json",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        report = json.loads(result.stdout)
+        self.assertEqual(
+            [app["application_id"] for app in report["applications"]],
+            ["habitsync", "memos", "vikunja"],
+        )
+        self.assertTrue(all("password" not in app for app in report["applications"]))
 
 
 if __name__ == "__main__":

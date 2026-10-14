@@ -74,6 +74,13 @@
   "secret_references": [
     "ansible-vault:semaphore_admin_password"
   ],
+  "authentication": {
+    "methods": ["local", "api-token"],
+    "bootstrap": { "mode": "automatic", "idempotent": true, "credential_reference": "ansible-vault:semaphore_admin_password", "notes": "Semaphore initializes the configured admin account on first run. Existing application data is preserved on reapply." },
+    "token_lifecycle": ["generate", "revoke"],
+    "manual_steps": ["Sign in as admin using username admin and the vaulted semaphore_admin_password value.", "Create narrowly scoped access keys from the UI when an integration needs API access."],
+    "oidc": { "supported": false, "notes": "Aggregare has not implemented or verified federated sign-in for this catalog entry." }
+  },
   "integrations": [
     "ansible"
   ]

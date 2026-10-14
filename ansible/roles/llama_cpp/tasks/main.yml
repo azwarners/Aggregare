@@ -60,6 +60,7 @@
         mode: "{{ item.mode }}"
       loop:
         - { path: /opt/aggregare, owner: root, group: root, mode: '0755' }
+        - { path: /var/lib/aggregare, owner: root, group: root, mode: '0755' }
         - { path: /var/lib/aggregare/llama.cpp, owner: llama-cpp, group: llama-cpp, mode: '0750' }
         - { path: /var/lib/aggregare/llama.cpp/models, owner: llama-cpp, group: llama-cpp, mode: '0750' }
         - { path: /var/lib/aggregare/status, owner: root, group: root, mode: '0755' }

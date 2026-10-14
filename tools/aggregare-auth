@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Report login and first-run setup requirements from the Aggregare catalog."""
+
+import argparse
+import json
+from pathlib import Path
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CATALOG = ROOT / "catalog/v1"
+
+
+def load_apps():
+    index = json.loads((CATALOG / "index.json").read_text(encoding="utf-8"))
+    apps = {}
+    for item in index["applications"]:
+        path = CATALOG / item["path"]
+        apps[item["id"]] = json.loads(path.read_text(encoding="utf-8"))
+    return apps
+
+
+def make_record(app):
+    auth = app.get("authentication")
+    if auth is None:
+        return {
+            "application_id": app["id"],
+            "display_name": app.get("display_name", app["id"]),
+            "status": "not-assessed",
+            "methods": [],
+            "bootstrap": {"mode": "unknown", "idempotent": False},
+            "credential_reference": None,
+            "manual_steps": ["Authentication setup has not been assessed in the catalog."],
+        }
+    bootstrap = auth["bootstrap"]
+    return {
+        "application_id": app["id"],
+        "display_name": app.get("display_name", app["id"]),
+        "status": "assessed",
+        "methods": auth["methods"],
+        "bootstrap": {"mode": bootstrap["mode"], "idempotent": bootstrap["idempotent"]},
+        "credential_reference": bootstrap.get("credential_reference"),
+        "token_lifecycle": auth.get("token_lifecycle", []),
+        "manual_steps": auth["manual_steps"],
+        "oidc": auth.get("oidc", {"supported": False, "notes": "Not assessed."}),
+    }
+
+
+def render_text(records):
+    for record in records:
+        print(f"{record['display_name']} ({record['application_id']}) — {record['status']}")
+        print(f"  Login: {', '.join(record['methods']) or 'not assessed'}")
+        print(f"  Bootstrap: {record['bootstrap']['mode']}")
+        if record.get("credential_reference"):
+            print(f"  Secret handle: {record['credential_reference']}")
+        for step in record["manual_steps"]:
+            print(f"  Next: {step}")
+        oidc = record.get("oidc")
+        if oidc and oidc.get("notes"):
+            print(f"  OIDC: {oidc['notes']}")
+        if oidc and oidc.get("callback_path"):
+            print(f"  Callback: {oidc['callback_path']}")
+            print(f"  Client types: {', '.join(oidc.get('client_types', [])) or 'not specified'}")
+            print(f"  PKCE: {'yes' if oidc.get('pkce') else 'no'}")
+            print(f"  Scopes: {' '.join(oidc.get('scopes', [])) or 'not specified'}")
+            print(f"  Local recovery: {'available' if oidc.get('local_recovery') else 'not confirmed'}")
+            print(f"  Integration verification: {oidc.get('verification', 'untested')}")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("applications", nargs="*", help="catalog application IDs; defaults to all")
+    parser.add_argument("--format", choices=("text", "json"), default="text")
+    args = parser.parse_args(argv)
+
+    apps = load_apps()
+    unknown = sorted(set(args.applications) - apps.keys())
+    if unknown:
+        parser.error("unknown application id(s): " + ", ".join(unknown))
+    selected = args.applications or list(apps)
+    records = [make_record(apps[app_id]) for app_id in selected]
+    if args.format == "json":
+        json.dump({"schema_version": "v1", "applications": records}, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+    else:
+        render_text(records)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

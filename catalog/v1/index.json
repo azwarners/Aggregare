@@ -55,8 +55,8 @@
       "path": "applications/vikunja.json"
     },
     {
-      "id": "beaver",
-      "path": "applications/beaver.json"
+      "id": "habitsync",
+      "path": "applications/habitsync.json"
     },
     {
       "id": "semaphore-ui",

@@ -6,10 +6,23 @@ After=network-online.target
 [Container]
 ContainerName={{ application_id }}
 Image={{ application_image }}
+Timezone=local
 {% if application_user | length > 0 %}
 User={{ application_user }}
 {% endif %}
+{% for host in application_add_hosts | default([]) %}
+AddHost={{ host.name }}:{{ host.address }}
+{% endfor %}
+{% if 'TZ' not in (application_environment | default({})) %}
+Environment=TZ={{ host_timezone }}
+{% endif %}
 PublishPort={{ application_bind_address }}:{{ application_host_port }}:{{ application_container_port }}
+{% if application_system_ca_bundle | default(false) %}
+Volume=/etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+{% endif %}
+{% if application_java_trust_store | default(false) %}
+Volume=/etc/ssl/certs/java/cacerts:/opt/java/openjdk/lib/security/cacerts:ro
+{% endif %}
 {% if application_volumes | length > 0 %}
 {% for volume in application_volumes %}
 Volume={{ volume.host }}:{{ volume.container }}{{ ':' ~ volume.options if volume.options is defined else '' }}

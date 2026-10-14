@@ -21,6 +21,7 @@
     "conflicts": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
     "services": { "type": "array", "items": { "$ref": "#/$defs/service" } },
     "configuration": { "type": "array", "items": { "$ref": "#/$defs/configuration" } },
+    "authentication": { "$ref": "#/$defs/authentication" },
     "secret_references": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
     "capabilities": { "type": "object", "required": ["install", "update", "remove", "verify"], "properties": { "install": { "type": "boolean" }, "update": { "type": "boolean" }, "remove": { "type": "boolean" }, "verify": { "type": "boolean" } }, "additionalProperties": { "type": "boolean" } },
     "integrations": { "type": "array", "items": { "type": "string" } },
@@ -52,6 +53,42 @@
       "additionalProperties": false
     },
     "service": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" }, "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 }, "uniqueItems": true }, "data_paths": { "type": "array", "items": { "type": "string" } }, "endpoints": { "type": "array", "items": { "type": "string", "format": "uri" } } }, "additionalProperties": false },
-    "configuration": { "type": "object", "required": ["name", "type"], "properties": { "name": { "type": "string" }, "type": { "enum": ["string", "integer", "number", "boolean", "array", "object"] }, "required": { "type": "boolean" }, "secret_reference": { "type": "boolean" }, "description": { "type": "string" } }, "additionalProperties": false }
+    "configuration": { "type": "object", "required": ["name", "type"], "properties": { "name": { "type": "string" }, "type": { "enum": ["string", "integer", "number", "boolean", "array", "object"] }, "required": { "type": "boolean" }, "secret_reference": { "type": "boolean" }, "description": { "type": "string" } }, "additionalProperties": false },
+    "authentication": {
+      "type": "object",
+      "required": ["methods", "bootstrap", "manual_steps"],
+      "properties": {
+        "methods": { "type": "array", "items": { "enum": ["local", "oidc", "oauth2", "api-token", "passkey", "none", "unknown"] }, "uniqueItems": true },
+        "bootstrap": {
+          "type": "object",
+          "required": ["mode", "idempotent"],
+          "properties": {
+            "mode": { "enum": ["automatic", "first-run-ui", "api", "cli", "config", "none", "unsupported", "unknown"] },
+            "idempotent": { "type": "boolean" },
+            "credential_reference": { "type": "string" },
+            "notes": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "token_lifecycle": { "type": "array", "items": { "enum": ["generate", "import", "rotate", "revoke", "unsupported", "unknown"] }, "uniqueItems": true },
+        "manual_steps": { "type": "array", "items": { "type": "string" } },
+        "oidc": {
+          "type": "object",
+          "properties": {
+            "supported": { "type": "boolean" },
+            "callback_path": { "type": "string" },
+            "client_types": { "type": "array", "items": { "enum": ["public", "confidential"] }, "uniqueItems": true },
+            "pkce": { "type": "boolean" },
+            "pkce_methods": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+            "scopes": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+            "local_recovery": { "type": "boolean" },
+            "verification": { "enum": ["untested", "partial", "passed", "failed"] },
+            "notes": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
   }
 }

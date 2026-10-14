@@ -1,0 +1,160 @@
+---
+- name: Validate temporary Phase 2.5 edge settings
+  ansible.builtin.assert:
+    that:
+      - aggregare_environment == 'dev'
+      - phase25_lan_address is match('^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)[0-9.]+$')
+      - phase25_lan_subnet is match('^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)[0-9.]+/[0-9]+$')
+      - phase25_test_names | length >= 2
+      - phase25_test_sites | length == phase25_test_names | length
+      - phase25_caddy_image is match('^docker\.io/library/caddy:[0-9]+\.[0-9]+\.[0-9]+-alpine$')
+    fail_msg: >-
+      The temporary Phase 2.5 HTTPS edge is restricted to the dev environment,
+      a private IPv4 address/subnet, named apps, and a pinned Caddy image.
+
+- name: Install Podman for the temporary Caddy edge
+  ansible.builtin.apt:
+    name: podman
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create Caddy configuration and persistent state directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/aggregare/phase-2.5, mode: '0750' }
+    - { path: /var/lib/aggregare/phase-2.5/caddy-data, owner: '1000', group: '1000', mode: '0750' }
+    - { path: /var/lib/aggregare/phase-2.5/caddy-config, owner: '1000', group: '1000', mode: '0750' }
+    - { path: /var/lib/aggregare/phase-2.5, mode: '0755' }
+
+- name: Install temporary Caddy reverse-proxy configuration
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: /etc/aggregare/phase-2.5/Caddyfile
+    owner: root
+    group: root
+    mode: '0644'
+  register: phase25_caddyfile
+
+- name: Install rootful Caddy Quadlet
+  ansible.builtin.template:
+    src: caddy.container.j2
+    dest: /etc/containers/systemd/aggregare-phase25-caddy.container
+    owner: root
+    group: root
+    mode: '0644'
+  register: phase25_caddy_quadlet
+
+- name: Add dev-only temporary host mappings on the Aggregare host
+  ansible.builtin.blockinfile:
+    path: "{{ phase25_hosts_file }}"
+    marker: "# {mark} AGGREGARE PHASE 2.5 DEV TEST"
+    block: "{{ phase25_lan_address }} {{ phase25_test_names | join(' ') }}"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Export client-side dev host entries without changing router DNS
+  ansible.builtin.copy:
+    dest: /var/lib/aggregare/phase-2.5/hosts.entries
+    content: "{{ phase25_lan_address }} {{ phase25_test_names | join(' ') }}\n"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload systemd after Caddy Quadlet changes
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: phase25_caddy_quadlet.changed
+
+- name: Start the temporary Caddy HTTPS edge
+  ansible.builtin.systemd_service:
+    name: aggregare-phase25-caddy.service
+    enabled: true
+    state: "{{ 'restarted' if phase25_caddy_quadlet.changed or phase25_caddyfile.changed else 'started' }}"
+
+- name: Wait for Caddy to create its persistent internal CA
+  ansible.builtin.stat:
+    path: /var/lib/aggregare/phase-2.5/caddy-data/caddy/pki/authorities/local/root.crt
+  register: phase25_caddy_root
+  retries: 30
+  delay: 2
+  until: phase25_caddy_root.stat.exists
+
+- name: Export the dev-only public Caddy root certificate
+  ansible.builtin.copy:
+    src: /var/lib/aggregare/phase-2.5/caddy-data/caddy/pki/authorities/local/root.crt
+    dest: "{{ phase25_caddy_root_export }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install host and Java CA trust tooling for the dev test
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - ca-certificates-java
+      - openjdk-21-jre-headless
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Add the dev-only Caddy root to the host trust bundle
+  ansible.builtin.copy:
+    src: "{{ phase25_caddy_root_export }}"
+    dest: /usr/local/share/ca-certificates/aggregare-phase25-dev.crt
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0644'
+  register: phase25_ca_cert
+
+- name: Refresh system and Java CA trust stores
+  ansible.builtin.command:
+    argv: [update-ca-certificates]
+  when: phase25_ca_cert.changed
+  register: phase25_ca_refresh
+  changed_when: "'0 added, 0 removed' not in phase25_ca_refresh.stdout"
+
+- name: Confirm Java CA trust store exists for the HabitSync runtime
+  ansible.builtin.stat:
+    path: /etc/ssl/certs/java/cacerts
+  register: phase25_java_cacerts
+
+- name: Require the dev root CA in the Java trust-store path
+  ansible.builtin.assert:
+    that:
+      - phase25_java_cacerts.stat.exists
+    fail_msg: The Java CA trust store was not generated; HabitSync cannot verify the dev OIDC issuer certificate.
+
+- name: Read UFW status
+  ansible.builtin.command:
+    argv: [ufw, status]
+  register: phase25_ufw_status
+  changed_when: false
+  failed_when: false
+
+- name: Permit HTTPS from the dev LAN only when UFW is active
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - allow
+      - from
+      - "{{ phase25_lan_subnet }}"
+      - to
+      - "{{ phase25_lan_address }}"
+      - port
+      - '443'
+      - proto
+      - tcp
+      - comment
+      - Aggregare Phase 2.5 dev HTTPS
+  when: "'Status: active' in phase25_ufw_status.stdout"
+  register: phase25_ufw_rule
+  changed_when: "'Skipping adding existing rule' not in phase25_ufw_rule.stdout"

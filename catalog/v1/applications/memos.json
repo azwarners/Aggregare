@@ -67,5 +67,12 @@
     }
   ],
   "secret_references": [],
+  "authentication": {
+    "methods": ["local", "oidc", "api-token"],
+    "bootstrap": { "mode": "first-run-ui", "idempotent": false, "notes": "The first user created on a fresh instance becomes host administrator. Aggregare does not set or recover this password." },
+    "token_lifecycle": ["generate", "rotate", "revoke"],
+    "manual_steps": ["Open the instance URL and create the first administrator account.", "Create personal access tokens in the signed-in account for integrations; save each token when shown because it is only displayed once."],
+    "oidc": { "supported": true, "notes": "Memos supports OAuth2 identity providers, but provider setup and account linking remain manual." }
+  },
   "integrations": []
 }

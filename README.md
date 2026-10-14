@@ -14,6 +14,12 @@ The shared contracts and end-to-end examples are in
 [`docs/contracts/phase-1.md`](docs/contracts/phase-1.md). The Phase 2 catalog
 and direct Ansible usage are documented in
 [`docs/contracts/phase-2.md`](docs/contracts/phase-2.md).
+Phase 2.5 login requirements and secure credential setup are in
+[`docs/contracts/phase-2.5.md`](docs/contracts/phase-2.5.md); the current live
+results are in [`docs/contracts/phase-2.5-verification.md`](docs/contracts/phase-2.5-verification.md).
+Inspect app login requirements with `./tools/aggregare-auth`. The
+[Phase 2.5 HTTPS and OIDC guide](docs/deployment/phase-2.5-https-oidc.md)
+covers temporary HTTPS and the separate dev and prod inventory model.
 
 Validate the contracts, catalog, and Ansible YAML with
 `python3 -m unittest discover -s tests` after installing `requirements-dev.txt`.

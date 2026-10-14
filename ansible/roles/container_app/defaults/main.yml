@@ -10,9 +10,13 @@ application_data_path: /var/lib/aggregare/app
 application_container_data_path: /data
 application_data_paths: []
 application_volumes: []
+application_add_hosts: []
+application_system_ca_bundle: false
+application_java_trust_store: false
 application_data_owner: root
 application_data_group: root
 application_environment: {}
 application_secret_environment: {}
 application_user: ''
 application_health_path: /
+application_health_status_codes: [200, 400, 401, 403, 404]

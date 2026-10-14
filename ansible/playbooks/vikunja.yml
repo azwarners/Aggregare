@@ -4,14 +4,25 @@
   vars:
     application_id: vikunja
     application_version: 2.6.0
-    application_image: vikunja/vikunja:2.6.0
+    application_image: docker.io/vikunja/vikunja:2.6.0
     application_host_port: 3456
     application_container_port: 3456
     application_data_path: /var/lib/aggregare/vikunja
     application_container_data_path: /db
+    application_data_paths:
+      - /var/lib/aggregare/vikunja/files
+      - /var/lib/aggregare/vikunja/db
+    application_data_owner: '1000'
+    application_data_group: '0'
+    application_user: '1000:0'
+    application_volumes:
+      - host: /var/lib/aggregare/vikunja/files
+        container: /app/vikunja/files
+      - host: /var/lib/aggregare/vikunja/db
+        container: /db
     application_environment:
       VIKUNJA_DATABASE_PATH: /db/vikunja.db
-      VIKUNJA_SERVICE_PUBLICURL: http://127.0.0.1:3456
+      VIKUNJA_SERVICE_PUBLICURL: "{{ vikunja_base_url | default('http://127.0.0.1:3456') }}"
     application_health_path: /api/v1/info
   tasks:
   - name: Apply the shared OCI application role

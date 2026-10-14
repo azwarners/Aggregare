@@ -45,6 +45,7 @@
       loop:
         - /opt/aggregare
         - /opt/aggregare/venvs
+        - /var/lib/aggregare
         - /var/lib/aggregare/status
 
     - name: Check out application source

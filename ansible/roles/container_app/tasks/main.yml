@@ -53,6 +53,26 @@
         update_cache: true
         cache_valid_time: 3600
 
+    - name: Read the host timezone for the application container
+      ansible.builtin.command:
+        argv:
+          - timedatectl
+          - show
+          - --property=Timezone
+          - --value
+      register: application_host_timezone
+      changed_when: false
+
+    - name: Require a configured host timezone
+      ansible.builtin.assert:
+        that:
+          - application_host_timezone.stdout | length > 0
+        fail_msg: Could not read the host timezone with timedatectl.
+
+    - name: Set the application container timezone fact
+      ansible.builtin.set_fact:
+        host_timezone: "{{ application_host_timezone.stdout }}"
+
     - name: Create application data and status directories
       ansible.builtin.file:
         path: "{{ item }}"
@@ -60,7 +80,7 @@
         owner: "{{ application_data_owner if item in ((application_data_paths | default([])) + [application_data_path]) else 'root' }}"
         group: "{{ application_data_group if item in ((application_data_paths | default([])) + [application_data_path]) else 'root' }}"
         mode: "{{ '0750' if item in ((application_data_paths | default([])) + [application_data_path]) else '0755' }}"
-      loop: "{{ (application_data_paths | default([])) + [application_data_path, '/etc/containers/systemd', '/var/lib/aggregare/status', '/etc/aggregare'] }}"
+      loop: "{{ (application_data_paths | default([])) + [application_data_path, '/var/lib/aggregare', '/etc/containers/systemd', '/var/lib/aggregare/status', '/etc/aggregare'] }}"
 
     - name: Install systemd Quadlet definition
       ansible.builtin.template:
@@ -97,16 +117,16 @@
       ansible.builtin.uri:
         url: "http://{{ application_bind_address }}:{{ application_host_port }}{{ application_health_path }}"
         method: GET
-        status_code: [200, 400, 401, 403, 404]
+        status_code: "{{ application_health_status_codes }}"
       register: application_health
       retries: 24
       delay: 5
-      until: application_health.status | default(0) == 200 or application_health.status | default(0) in [400, 401, 403, 404]
+      until: application_health.status | default(0) in application_health_status_codes
 
     - name: Require a successful application health response
       ansible.builtin.assert:
         that:
-          - application_health.status == 200
+          - application_health.status in application_health_status_codes
         fail_msg: >-
           The application responded with HTTP {{ application_health.status }} at
           {{ application_health.url }}. Check the configured health path and

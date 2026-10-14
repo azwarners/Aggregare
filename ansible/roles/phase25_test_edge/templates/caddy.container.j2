@@ -1,0 +1,23 @@
+[Unit]
+Description=Aggregare temporary Phase 2.5 HTTPS test edge (dev only)
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+ContainerName=aggregare-phase25-caddy
+Image={{ phase25_caddy_image }}
+Network=host
+User=1000:1000
+AddCapability=CAP_NET_BIND_SERVICE
+Volume=/etc/aggregare/phase-2.5/Caddyfile:/etc/caddy/Caddyfile:ro
+Volume=/var/lib/aggregare/phase-2.5/caddy-data:/data
+Volume=/var/lib/aggregare/phase-2.5/caddy-config:/config
+ReadOnly=true
+Tmpfs=/tmp
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

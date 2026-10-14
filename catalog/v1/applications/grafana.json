@@ -76,6 +76,13 @@
   "secret_references": [
     "ansible-vault:grafana_admin_password"
   ],
+  "authentication": {
+    "methods": ["local", "api-token"],
+    "bootstrap": { "mode": "automatic", "idempotent": true, "credential_reference": "ansible-vault:grafana_admin_password", "notes": "Grafana's container configuration supplies the initial admin password. Existing Grafana identity state is preserved; changing the secret reference is not a password-rotation operation." },
+    "token_lifecycle": ["generate", "revoke"],
+    "manual_steps": ["Sign in as admin using the vaulted grafana_admin_password value.", "Create service account tokens in Grafana for integrations; revoke them in Grafana when no longer needed."],
+    "oidc": { "supported": true, "notes": "Grafana supports OAuth/OIDC providers; Aggregare does not configure an identity provider yet." }
+  },
   "integrations": [
     "beszel"
   ]

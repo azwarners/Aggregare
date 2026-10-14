@@ -17,12 +17,44 @@ fail() {
 ask_yes_no() {
   local answer
   while true; do
-    read -r -p 'Should Memos be reachable by other devices on your private LAN? [y/N] ' answer
+    read -r -p "${1:-Should Memos be reachable by other devices on your private LAN? [y/N] }" answer
     case "${answer,,}" in
       y|yes) return 0 ;;
       ''|n|no) return 1 ;;
       *) printf 'Please type y or n.\n' ;;
     esac
+  done
+}
+
+confirm_host_time() {
+  local timezone current_timezone ntp_synchronized
+
+  command -v timedatectl >/dev/null 2>&1 || fail "timedatectl is required to confirm the host timezone and network time synchronization."
+  current_timezone="$(timedatectl show --property=Timezone --value)" || fail "could not read the host timezone."
+
+  while true; do
+    printf '\nHost time settings:\n'
+    date '+  Local: %Y-%m-%d %H:%M:%S %Z (%z)'
+    date -u '+  UTC:   %Y-%m-%d %H:%M:%S UTC'
+    printf '  Timezone: %s\n' "$current_timezone"
+    timedatectl status | sed -n '/System clock synchronized:/p; /NTP service:/p'
+
+    if ask_yes_no 'Is the host date, time, and timezone correct? [y/N] '; then
+      ntp_synchronized="$(timedatectl show --property=NTPSynchronized --value)" || fail "could not read the host clock synchronization status."
+      [[ "$ntp_synchronized" == yes ]] || fail "the system clock is not synchronized. Enable and verify network time synchronization, then rerun install.sh. Check with: timedatectl status"
+      return 0
+    fi
+
+    read -r -p "Enter the correct IANA timezone [$current_timezone]: " timezone
+    timezone="${timezone:-$current_timezone}"
+    if ! timedatectl list-timezones | grep -Fxq -- "$timezone"; then
+      printf 'Unknown timezone: %s. Enter a name such as America/Phoenix.\n' "$timezone" >&2
+      continue
+    fi
+    if [[ "$timezone" != "$current_timezone" ]]; then
+      sudo timedatectl set-timezone "$timezone" || fail "could not set the host timezone to $timezone."
+      current_timezone="$timezone"
+    fi
   done
 }
 
@@ -70,6 +102,7 @@ source /etc/os-release
 [[ "${ID:-}" == ubuntu && "${VERSION_ID:-}" == 26.04 ]] || fail "this bootstrap currently supports Ubuntu Server 26.04."
 command -v python3 >/dev/null 2>&1 || fail "Python 3 is required by Ubuntu and was not found."
 command -v ip >/dev/null 2>&1 || fail "the ip command is missing; install Ubuntu's iproute2 package first."
+confirm_host_time
 
 printf '\nAggregare Server v%s bootstrap\n' "$AGGREGARE_VERSION"
 printf 'This installs Memos as one example application through its Ansible playbook.\n'

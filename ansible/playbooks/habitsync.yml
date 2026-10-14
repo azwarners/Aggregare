@@ -1,0 +1,67 @@
+- name: Install or remove HabitSync
+  hosts: aggregare
+  become: true
+  vars:
+    application_id: habitsync
+    application_version: 0.19.3
+    application_image: ghcr.io/jofoerster/habitsync:0.19.3
+    application_host_port: 6842
+    application_container_port: 6842
+    application_bind_address: 127.0.0.1
+    application_data_path: /var/lib/aggregare/habitsync
+    application_container_data_path: /data
+    application_data_owner: '6842'
+    application_data_group: '6842'
+    application_user: 6842:6842
+    application_system_ca_bundle: true
+    application_java_trust_store: true
+    application_add_hosts: "{{ aggregare_phase25_add_hosts | default([]) }}"
+    application_environment:
+      BASE_URL: "{{ habitsync_base_url }}"
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+      JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/opt/java/openjdk/lib/security/cacerts
+      "APP_SECURITY_ISSUERS_{{ aggregare_oidc_provider.slug }}_URL": "{{ aggregare_oidc_provider.issuer_url }}"
+      "APP_SECURITY_ISSUERS_{{ aggregare_oidc_provider.slug }}_CLIENTID": "{{ aggregare_oidc_clients.habitsync.client_id }}"
+      "APP_SECURITY_ISSUERS_{{ aggregare_oidc_provider.slug }}_NEEDSCONFIRMATION": "{{ habitsync_oidc_needs_confirmation | default('true') }}"
+    application_secret_environment:
+      JWT_SECRET: "{{ habitsync_jwt_secret }}"
+      SPRING_APPLICATION_JSON: >-
+        {{ {
+          'app': {
+            'security': {
+              'basic-auth': {
+                'users': {habitsync_recovery_user: habitsync_recovery_password_hash}
+              }
+            }
+          }
+        } | to_json }}
+    application_health_path: /actuator/health
+  pre_tasks:
+    - name: Require HabitSync OIDC and session configuration
+      ansible.builtin.assert:
+        that:
+          - habitsync_base_url is defined
+          - habitsync_base_url is match('^https://')
+          - not habitsync_base_url.endswith('/')
+          - aggregare_oidc_provider is defined
+          - aggregare_oidc_provider.slug is match('^[A-Z0-9]+$')
+          - aggregare_oidc_provider.issuer_url is match('^https://')
+          - not aggregare_oidc_provider.issuer_url.endswith('/')
+          - aggregare_oidc_clients.habitsync.client_id is defined
+          - aggregare_oidc_clients.habitsync.client_id | length > 0
+          - habitsync_jwt_secret is defined
+          - habitsync_jwt_secret | length >= 64
+          - habitsync_recovery_user is defined
+          - habitsync_recovery_user is match('^[a-z0-9][a-z0-9-]{0,35}$')
+          - habitsync_recovery_password_hash is defined
+          - habitsync_recovery_password_hash is match('^[$]2[aby][$]')
+        fail_msg: >-
+          HabitSync needs its HTTPS base URL, a generic HTTPS OIDC provider and
+          client ID, stable JWT_SECRET, and local recovery account hash supplied
+          through a protected variable source.
+          Configure these values before installing the application.
+      when: application_state | default('present') == 'present'
+  tasks:
+    - name: Apply the shared OCI application role
+      ansible.builtin.import_role:
+        name: container_app

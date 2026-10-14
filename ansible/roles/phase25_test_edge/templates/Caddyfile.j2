@@ -1,0 +1,12 @@
+{
+	admin 127.0.0.1:2019
+	auto_https disable_redirects
+}
+
+{% for site in phase25_test_sites %}
+https://{{ site.name }} {
+	bind {{ phase25_lan_address }}
+	tls internal
+	reverse_proxy {{ site.upstream }}
+}
+{% endfor %}

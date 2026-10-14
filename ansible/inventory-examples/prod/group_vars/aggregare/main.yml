@@ -1,0 +1,23 @@
+# Documentation-only values. Replace the IP with this environment's reserved
+# LAN address before using the copied inventory.
+aggregare_environment: prod
+aggregare_lan_address: 192.0.2.20
+aggregare_lan_subnet: 192.0.2.0/24
+aggregare_private_zone: prod.aggregare.home.arpa
+
+habitsync_base_url: "https://habitsync.{{ aggregare_private_zone }}"
+aggregare_oidc_provider:
+  slug: AGGREGARE
+  display_name: Aggregare Identity
+  issuer_url: "https://identity.{{ aggregare_private_zone }}"
+  scopes: [openid, profile, email]
+aggregare_oidc_clients:
+  habitsync:
+    client_id: "replace-with-prod-client-id"
+habitsync_oidc_needs_confirmation: true
+aggregare_phase25_add_hosts:
+  - { name: "habitsync.{{ aggregare_private_zone }}", address: "{{ aggregare_lan_address }}" }
+  - { name: "memos.{{ aggregare_private_zone }}", address: "{{ aggregare_lan_address }}" }
+  - { name: "vikunja.{{ aggregare_private_zone }}", address: "{{ aggregare_lan_address }}" }
+memos_base_url: "https://memos.{{ aggregare_private_zone }}"
+vikunja_base_url: "https://vikunja.{{ aggregare_private_zone }}"

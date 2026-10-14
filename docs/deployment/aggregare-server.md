@@ -38,6 +38,15 @@ cd "$HOME/Aggregare"
 ./install.sh
 ```
 
+During installation, Aggregare displays the server's local time, UTC time,
+timezone, and network time synchronization status. Confirm that they are
+correct before application deployment. If the timezone is wrong, enter its
+IANA name (for example, `America/Phoenix`); the installer applies it and asks
+you to confirm again. Installation stops if the system clock is not synchronized.
+On Ubuntu, inspect or enable time synchronization with `timedatectl status` and
+`sudo timedatectl set-ntp true`, then rerun the installer. Aggregare's managed
+Podman containers use the host timezone.
+
 The script checks for Ubuntu 26.04, installs Ansible Core and OpenSSH Server
 if needed, starts SSH, and runs the Memos playbook locally on this same server
 using a localhost inventory. A separate control machine or SSH connection is

@@ -1,0 +1,6 @@
+phase25_test_names: []
+phase25_test_sites: []
+phase25_lan_address: ''
+phase25_lan_subnet: ''
+phase25_hosts_file: /etc/hosts
+phase25_caddy_root_export: /var/lib/aggregare/phase-2.5/caddy-root.crt
