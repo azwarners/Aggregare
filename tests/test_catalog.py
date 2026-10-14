@@ -54,6 +54,14 @@ class CatalogContractTests(unittest.TestCase):
         self.assertNotIn("pocket-id.yml", site)
         self.assertFalse((ROOT / "ansible/playbooks/pocket-id.yml").exists())
         self.assertFalse((ROOT / "ansible/playbooks/phase25-pocket-id-client.yml").exists())
+        installer_sources = [ROOT / "install.sh"]
+        installer_sources.extend((ROOT / "ansible").rglob("*.yml"))
+        installer_sources.extend((ROOT / "catalog").rglob("*.json"))
+        for path in installer_sources:
+            content = path.read_text()
+            with self.subTest(source=path.relative_to(ROOT)):
+                self.assertNotIn("STATIC_API_KEY", content)
+                self.assertNotIn("pocket-id.yml", content)
 
     def test_application_status_contract_accepts_catalog_verification_shape(self):
         Draft202012Validator.check_schema(self.status_schema)

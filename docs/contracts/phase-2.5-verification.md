@@ -21,13 +21,16 @@ credential operations; preserve user data unless explicitly approved.
 | Pocket ID 2.18.0 service | Passed | Quadlet service is active; container health endpoint returned HTTP 204. |
 | OIDC discovery over HTTPS | Passed | The discovered issuer, authorization, token, and user-info endpoints all use the expected dev HTTPS host. Certificate validation succeeded using the exported dev root. |
 | Router / production changes | None | No router or production configuration was touched. UFW was inactive, so no firewall rule was added. |
-| Browser trust and Pocket ID administrator/passkey | Pending | Requires setup on Nick's browser device. |
-| HabitSync deployment and real OIDC login/recovery | Pending | Waiting for Pocket ID's HabitSync public client ID and browser-side HTTPS trust. |
-| Memos and Vikunja OIDC/login/recovery | Pending | Begin only after HabitSync's real login and local recovery checks pass. |
+| Browser trust and Pocket ID administrator/passkey | Abandoned | Not completed before the Pocket ID integration was removed; no further setup is planned under issue #13. |
+| HabitSync deployment and real OIDC login/recovery through Pocket ID | Abandoned | Not completed; the provider-specific client registration was removed with the integration. A later provider evaluation requires a separate decision and work item. |
+| Memos and Vikunja OIDC/login/recovery | Abandoned | Not started; these were follow-up plans contingent on the retired provider evaluation. |
 
-The external dev inventory also contains a generated HabitSync local recovery
-credential in a mode-600 file. It has not yet been exercised. Its username and
-password must not be copied into this record or the repository.
+The external dev inventory was reported to contain a generated HabitSync
+local recovery credential in a mode-600 file. It had not been exercised when
+this record was written. Its username and password must not be copied into
+this record or the repository. Source cleanup does not edit that inventory.
 
-Phase 2.5 remains incomplete until each supported app completes a real browser
-login and local recovery test, including logout/relogin and safe reapply.
+These provider and browser follow-ups were abandoned when the integration was
+removed. They are not outstanding tasks for issue #13. The earlier health and
+discovery results above remain historical results and do not establish a real
+user login.
