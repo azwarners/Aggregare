@@ -1,5 +1,14 @@
 # Aggregare
 
+## Implemented features and boundaries
+
+**Available today:** Ubuntu Server/Ansible-oriented installation scaffolding; a Phase 2 application catalog and Memos deployment path; documented application and composition contracts; a selectable identity-provider *configuration value* (`kanidm`, `external_oidc`, or `none`), saved for repeatable reapplication; identity requirement inspection via `./tools/aggregare-auth`; and tests covering configuration and contracts.
+
+**Not installed by selecting an option:** Kanidm, an external OpenID Connect provider, certificates, private DNS, or a fully configured SSO flow. The current identity-provider selector records a choice; it does not provision identity infrastructure. Application presets and a guided Phase 3 client remain future work.
+
+For a current checkout, review [the Ubuntu Server deployment guide](docs/deployment/aggregare-server.md), then run `./install.sh` on a suitable Ubuntu Server test host. Prefer a disposable VM for initial evaluation; review the playbooks and inventory before applying changes.
+
+
 Aggregare composes independently useful applications and infrastructure tools into one coherent platform.
 
 Ubuntu is the initial reference host platform, and Ansible is the initial/default configuration engine for that implementation. Aggregare is not defined as an operating system, Linux distribution, custom kernel, or custom ISO. Its application and composition contracts should avoid unnecessary platform coupling so additional host platforms or deployment backends can be added later when there is a concrete need.
