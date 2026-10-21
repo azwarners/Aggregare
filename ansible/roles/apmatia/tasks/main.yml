@@ -1,0 +1,375 @@
+---
+- name: Validate Apmatia settings
+  ansible.builtin.assert:
+    that:
+      - apmatia_state in ['present', 'absent']
+      - apmatia_host == '127.0.0.1'
+      - apmatia_port | int > 0
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version is version('24.04', '>=')
+    fail_msg: Apmatia is supported on Ubuntu 24.04+ and is intentionally bound to loopback.
+
+- name: Remove Apmatia service and application
+  when: apmatia_state == 'absent'
+  block:
+    - name: Stop and disable Apmatia core API
+      ansible.builtin.systemd_service:
+        name: apmatia-core.service
+        enabled: false
+        state: stopped
+      failed_when: false
+
+    - name: Remove Apmatia systemd unit
+      ansible.builtin.file:
+        path: /etc/systemd/system/apmatia-core.service
+        state: absent
+      notify: Reload systemd
+
+    - name: Remove Apmatia source and virtual environment
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /opt/aggregare/apmatia
+        - /opt/aggregare/venvs/apmatia
+
+    - name: Remove Apmatia catalog status
+      ansible.builtin.file:
+        path: /var/lib/aggregare/status/apmatia.json
+        state: absent
+
+- name: Install and configure Apmatia core API
+  when: apmatia_state == 'present'
+  block:
+    # Capture prior state before starting the API; startup initializes its empty
+    # SQLite user database, so checking afterwards cannot distinguish a fresh install.
+    - name: Inspect Apmatia persistent state before service startup
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ apmatia_data_dir }}/users.db"
+        - "{{ apmatia_config_dir }}/config.json"
+      register: apmatia_prior_state
+
+    - name: Check for saved first-user credentials
+      ansible.builtin.stat:
+        path: "{{ apmatia_credentials_path }}"
+      register: apmatia_credentials_file
+
+    - name: Check for Aggregare's fresh-install bootstrap marker
+      ansible.builtin.stat:
+        path: "{{ apmatia_bootstrap_state_path }}"
+      register: apmatia_bootstrap_state_file
+
+    - name: Create protected Aggregare configuration directory
+      ansible.builtin.file:
+        path: /etc/aggregare
+        state: directory
+        owner: root
+        group: root
+        mode: '0750'
+
+    - name: Determine whether this is a fresh Aggregare-managed Apmatia instance
+      ansible.builtin.set_fact:
+        apmatia_fresh_install: >-
+          {{ not apmatia_credentials_file.stat.exists
+             and not (apmatia_prior_state.results | selectattr('stat.exists') | list | length > 0) }}
+        apmatia_managed_fresh_install: >-
+          {{ apmatia_bootstrap_state_file.stat.exists
+             or (not apmatia_credentials_file.stat.exists
+                 and not (apmatia_prior_state.results | selectattr('stat.exists') | list | length > 0)) }}
+
+    - name: Record that Aggregare owns first-user setup for this fresh instance
+      ansible.builtin.copy:
+        dest: "{{ apmatia_bootstrap_state_path }}"
+        owner: root
+        group: root
+        mode: '0600'
+        force: false
+        content: "{{ {'bootstrap_owner': 'aggregare', 'fresh_instance': true} | to_nice_json }}"
+      when: apmatia_fresh_install | bool
+
+    - name: Ensure OpenSSL is installed for one-time credential generation
+      ansible.builtin.apt:
+        name: openssl
+        state: present
+
+    - name: Install the pinned Apmatia Python application
+      ansible.builtin.import_role:
+        name: python_app
+      vars:
+        python_app_state: present
+        python_app_id: apmatia
+        python_app_version: "{{ apmatia_version }}"
+        python_app_source: "{{ apmatia_source }}"
+        python_app_ref: "{{ apmatia_source_ref }}"
+        python_app_module: apmatia
+
+    - name: Create Apmatia service account
+      ansible.builtin.user:
+        name: apmatia
+        system: true
+        home: /var/lib/apmatia
+        create_home: true
+        shell: /usr/sbin/nologin
+
+    - name: Create Apmatia runtime directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: apmatia
+        group: apmatia
+        mode: '0750'
+      loop:
+        - /var/lib/apmatia
+        - "{{ apmatia_home }}"
+        - "{{ apmatia_data_dir }}"
+        - "{{ apmatia_config_dir }}"
+
+    - name: Install Apmatia core API systemd unit
+      ansible.builtin.template:
+        src: apmatia-core.service.j2
+        dest: /etc/systemd/system/apmatia-core.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart Apmatia
+
+    - name: Reload systemd before enabling Apmatia
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Enable and start Apmatia core API
+      ansible.builtin.systemd_service:
+        name: apmatia-core.service
+        enabled: true
+        state: started
+
+    - name: Apply pending Apmatia service changes
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for Apmatia core API health
+      ansible.builtin.uri:
+        url: "http://{{ apmatia_host }}:{{ apmatia_port }}/api/version"
+        method: GET
+        status_code: 200
+      register: apmatia_health
+      retries: 18
+      delay: 5
+      until: apmatia_health.status == 200
+
+    - name: Generate a first-user password on a fresh Apmatia installation
+      ansible.builtin.command:
+        argv: [/usr/bin/openssl, rand, -hex, '32']
+      register: apmatia_generated_password
+      changed_when: false
+      when:
+        - apmatia_managed_fresh_install | bool
+        - not apmatia_credentials_file.stat.exists
+      no_log: true
+
+    - name: Store first-user credentials in a root-only file
+      ansible.builtin.copy:
+        dest: "{{ apmatia_credentials_path }}"
+        owner: root
+        group: root
+        mode: '0600'
+        content: >-
+          {{ {
+            'username': apmatia_bootstrap_username,
+            'password': apmatia_generated_password.stdout
+          } | to_nice_json }}
+      when: apmatia_generated_password is not skipped
+      no_log: true
+
+    - name: Load saved first-user credentials
+      ansible.builtin.include_vars:
+        file: "{{ apmatia_credentials_path }}"
+        name: apmatia_saved_credentials
+      when: apmatia_credentials_file.stat.exists or apmatia_generated_password is not skipped
+      no_log: true
+
+    - name: Register the first Apmatia user on a fresh installation
+      ansible.builtin.uri:
+        url: "http://{{ apmatia_host }}:{{ apmatia_port }}/api/auth/register"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ apmatia_saved_credentials.username }}"
+          password: "{{ apmatia_saved_credentials.password }}"
+        status_code: 200
+        return_content: true
+      register: apmatia_registration
+      when:
+        - apmatia_generated_password is not skipped
+      no_log: true
+
+    - name: Log in with the saved Apmatia owner account
+      ansible.builtin.uri:
+        url: "http://{{ apmatia_host }}:{{ apmatia_port }}/api/auth/login"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ apmatia_saved_credentials.username }}"
+          password: "{{ apmatia_saved_credentials.password }}"
+        status_code: 200
+        return_content: true
+      register: apmatia_login
+      when:
+        - apmatia_credentials_file.stat.exists
+      no_log: true
+
+    - name: Record the authenticated Apmatia session cookie
+      ansible.builtin.set_fact:
+        apmatia_session_cookie: >-
+          {{ apmatia_registration.cookies.apmatia_session
+             if apmatia_registration is not skipped
+             else apmatia_login.cookies.apmatia_session }}
+      when:
+        - apmatia_registration is not skipped or apmatia_login is not skipped
+      no_log: true
+
+    - name: Check the selected upstream model list for Apmatia
+      ansible.builtin.uri:
+        url: "{{ apmatia_upstream_base_url | regex_replace('/v1/?$', '') | regex_replace('/+$', '') }}/v1/models"
+        method: GET
+        headers: "{{ {'Authorization': 'Bearer ' ~ apmatia_upstream_api_key} if apmatia_upstream_api_key | length > 0 else {} }}"
+        status_code: 200
+        return_content: true
+        timeout: 8
+      register: apmatia_upstream_models
+      when: apmatia_session_cookie is defined
+      no_log: true
+
+    - name: Validate the selected upstream model list
+      ansible.builtin.assert:
+        that:
+          - apmatia_upstream_models.json.data is sequence
+          - apmatia_upstream_models.json.data is not string
+          - apmatia_upstream_models.json.data | length > 0
+          - apmatia_upstream_models.json.data[0].id | default('') | string | length > 0
+        fail_msg: The configured upstream must return at least one model from /v1/models.
+      when: apmatia_session_cookie is defined
+
+    - name: Read existing Apmatia model configurations
+      ansible.builtin.uri:
+        url: "http://{{ apmatia_host }}:{{ apmatia_port }}/api/model-configs"
+        method: GET
+        headers:
+          Cookie: "apmatia_session={{ apmatia_session_cookie }}"
+        status_code: 200
+        return_content: true
+      register: apmatia_model_configs
+      when: apmatia_session_cookie is defined
+      no_log: true
+
+    - name: Add a backing model only when Apmatia has no configured models
+      ansible.builtin.uri:
+        url: "http://{{ apmatia_host }}:{{ apmatia_port }}/api/model-configs"
+        method: POST
+        headers:
+          Cookie: "apmatia_session={{ apmatia_session_cookie }}"
+        body_format: json
+        body:
+          user_alias: Aggregare default model
+          backend: openai_compatible
+          provider_name: "{{ apmatia_upstream_models.json.data[0].id }}"
+          model_url: "{{ apmatia_upstream_base_url | regex_replace('/v1/?$', '') | regex_replace('/+$', '') }}"
+          api_key: "{{ apmatia_upstream_api_key }}"
+          max_response_size: 8192
+          system_prompt: ''
+          metadata: {}
+        status_code: 200
+        return_content: true
+      when:
+        - apmatia_session_cookie is defined
+        - apmatia_model_configs.json | length == 0
+      no_log: true
+
+    - name: Trigger Apmatia's supported one-time starter-agent bootstrap
+      ansible.builtin.uri:
+        url: "http://{{ apmatia_host }}:{{ apmatia_port }}/api/agents"
+        method: GET
+        headers:
+          Cookie: "apmatia_session={{ apmatia_session_cookie }}"
+        status_code: 200
+        return_content: true
+      register: apmatia_agents
+      when:
+        - apmatia_session_cookie is defined
+        - apmatia_managed_fresh_install | bool
+      no_log: true
+
+    - name: Read Apmatia's published prompt-only agent catalog
+      ansible.builtin.uri:
+        url: "{{ apmatia_public_base_url }}/api/public/agents"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: apmatia_public_agents
+      when: apmatia_session_cookie is defined
+
+    - name: Verify the published starter agents have model mappings
+      ansible.builtin.assert:
+        that:
+          - apmatia_public_agents.json is sequence
+          - apmatia_public_agents.json is not string
+          - (apmatia_public_agents.json | map(attribute='name') | list | select('search', '^(Mira|Luna|Rowan|Belle|Ivy)') | list | length) == 5
+          - (apmatia_public_agents.json | selectattr('name', 'search', '^(Mira|Luna|Rowan|Belle|Ivy)') | selectattr('model', 'defined') | selectattr('model', 'ne', none) | list | length) == 5
+          - (apmatia_public_agents.json | selectattr('name', 'search', '^(Mira|Luna|Rowan|Belle|Ivy)') | selectattr('system_prompt', 'defined') | selectattr('system_prompt', 'ne', '') | list | length) == 5
+        fail_msg: Apmatia did not expose Mira, Luna, Rowan, Belle, and Ivy as published agents with backing model references.
+      when:
+        - apmatia_session_cookie is defined
+        - apmatia_managed_fresh_install | bool
+
+    - name: Verify Ysparr is reachable after Apmatia publication
+      ansible.builtin.uri:
+        url: "http://{{ ysparr_host | default('127.0.0.1') }}:{{ ysparr_port | default(8000) }}/v1/models"
+        method: GET
+        status_code: 200
+        return_content: true
+        timeout: 8
+      register: apmatia_ysparr_models
+      retries: 12
+      delay: 5
+      until: apmatia_ysparr_models.status == 200
+      when: apmatia_session_cookie is defined
+
+    - name: Verify Ysparr exposes model names after agent publication
+      ansible.builtin.assert:
+        that:
+          - apmatia_ysparr_models.json.data is sequence
+          - apmatia_ysparr_models.json.data is not string
+          - (apmatia_ysparr_models.json.data | map(attribute='id') | list | select('in', (apmatia_public_agents.json | map(attribute='name') | list)) | list | length) == (apmatia_public_agents.json | length)
+          - apmatia_upstream_models.json.data[0].id in (apmatia_ysparr_models.json.data | map(attribute='id') | list)
+      fail_msg: >-
+        Ysparr must expose every currently published Apmatia agent alongside the
+        selected upstream model. Check its Apmatia URL and restart Ysparr if needed.
+      when: apmatia_session_cookie is defined
+
+    - name: Leave existing Apmatia accounts untouched when no saved credentials are available
+      ansible.builtin.debug:
+        msg: >-
+          Apmatia is running, but its existing user database has no saved Aggregare
+          bootstrap credentials. Sign in through the local Apmatia UI and configure
+          its models and starter agents manually; Aggregare did not create another user.
+      when:
+        - not apmatia_credentials_file.stat.exists
+        - apmatia_prior_state.results | selectattr('stat.exists') | list | length > 0
+
+    - name: Write machine-readable Apmatia status
+      ansible.builtin.copy:
+        dest: /var/lib/aggregare/status/apmatia.json
+        owner: root
+        group: root
+        mode: '0644'
+        content: >-
+          {{ {
+            'schema_version': 'v1',
+            'application_id': 'apmatia',
+            'state': 'running',
+            'version': apmatia_version,
+            'deployment': {'backend': 'ansible', 'method': 'native-python', 'service': 'apmatia-core.service'},
+            'verification': {'status': 'passed', 'endpoint': 'http://' ~ apmatia_host ~ ':' ~ (apmatia_port | string) ~ '/api/version'},
+            'public_agents': (apmatia_public_agents.json | length) if apmatia_public_agents is not skipped else 0
+          } | to_nice_json }}

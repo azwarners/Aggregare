@@ -16,12 +16,17 @@
     "memos-image": "ghcr.io/usememos/memos:0.31.0",
     "habitsync-image": "ghcr.io/jofoerster/habitsync:0.19.3",
     "vikunja-image": "docker.io/vikunja/vikunja:2.6.0",
-    "ysparr-git": "264bc9c10ea3efdc21059767b58f20c4b07897cb",
-    "apmatia-git": "a72eeb8fd9319c304e98968d2be4124840540617",
+    "ysparr-git": "aa2e12f7ee51f9d9d6bb0dc2b17708e7c7b94a98",
+    "apmatia-git": "bddc27cb369579cc5f912a556aab1612e2034482",
     "openipe-git": "da7842181cca04c05ebbc19cef9cf50759e709b7"
   },
   "persistent_paths": [
     "/var/lib/ysparr",
+    "/var/lib/apmatia/app",
+    "/var/lib/apmatia/data",
+    "/var/lib/apmatia/config",
+    "/etc/aggregare/apmatia-credentials.json",
+    "/etc/aggregare/apmatia-bootstrap-state.json",
     "/var/lib/aggregare/open-webui",
     "/var/lib/aggregare/memos",
     "/var/lib/aggregare/habitsync",
@@ -32,6 +37,6 @@
   ],
   "notes": [
     "AI chat and productivity applications install together; installing this bundle does not remove or replace existing applications.",
-    "OpenIPE and Apmatia are currently installed as pinned Python packages; their API/service integration is managed separately."
+    "Apmatia runs its core API with persistent state and publishes five prompt-only starter agents to Ysparr. OpenIPE remains a pinned Python package."
   ]
 }

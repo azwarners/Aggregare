@@ -329,6 +329,8 @@ else
   printf 'User-facing applications on this server:\n'
   printf '  Open WebUI: http://127.0.0.1:8080/\n  Memos:      http://127.0.0.1:5230/\n  HabitSync:  http://127.0.0.1:6842/\n  Vikunja:    http://127.0.0.1:3456/\n'
 fi
-printf 'Ysparr API: http://127.0.0.1:8000/v1. Apmatia and OpenIPE are installed from their pinned Python package revisions.\n'
+printf 'Ysparr API: http://127.0.0.1:8000/v1. Apmatia core API: http://127.0.0.1:8001 (loopback only).\n'
+printf 'On a fresh install, Apmatia first-user credentials are stored root-only at /etc/aggregare/apmatia-credentials.json; retrieve with sudo cat and keep a protected backup.\n'
+printf 'Apmatia publishes its five starter agents to Ysparr during fresh first-user setup. Ysparr continues to serve real upstream models if Apmatia is temporarily unavailable.\n'
 printf 'HabitSync local login is stored root-only at /etc/aggregare/habitsync-credentials; retrieve it with sudo cat and rotate it after first sign-in.\n'
 printf 'AI chat upstream: %s (checked at /v1/models). Reapply the default playbook to update it; the value is saved in /etc/aggregare/ysparr-upstream.json.\n' "$LLAMA_CPP_URL"

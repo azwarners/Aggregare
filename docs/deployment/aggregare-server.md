@@ -22,7 +22,10 @@ You need:
 - Git to clone the Aggregare repository. If needed, install it from the VM console with `sudo apt update && sudo apt install -y git`.
 
 Keep your VM backup. Memos data is stored under `/var/lib/aggregare/memos/`
-and is preserved when its service is removed.
+and is preserved when its service is removed. Back up Apmatia's
+`/var/lib/apmatia/app`, `/var/lib/apmatia/data`, and `/var/lib/apmatia/config`
+along with its root-only credential and bootstrap files; removing the service
+does not remove them.
 
 ## Install the default system bundle
 
@@ -88,13 +91,24 @@ The default bundle includes AI chat and productivity applications. Open
 WebUI listens on port 8080 and Ysparr on port 8000; the catalog records the
 pinned upstream versions. Open WebUI keeps its
 database and uploaded data in `/var/lib/aggregare/open-webui/`; Ysparr keeps
-its SQLite database in `/var/lib/ysparr/`. Apmatia is currently installed as
-an import-verified Python package under `/opt/aggregare/apmatia` and
-`/opt/aggregare/venvs/apmatia`; its API service and starter-agent bootstrap
-are not implemented by this installation path yet. OpenIPE is installed from
-its pinned Python package revision as part of the default system. Open WebUI
-uses Ysparr, which the installer connects to an external llama.cpp endpoint
-during setup. Aggregare does not install llama.cpp or download model weights.
+its SQLite database in `/var/lib/ysparr/`. Apmatia runs as
+`apmatia-core.service`, bound to loopback on port 8001, with state in
+`/var/lib/apmatia/{app,data,config}`. On a fresh install, Aggregare creates the
+first Apmatia account and saves its password at
+`/etc/aggregare/apmatia-credentials.json` with root-only permissions. Retrieve
+it with `sudo cat /etc/aggregare/apmatia-credentials.json` and keep a protected
+backup. Reapply logs in with that account; if an existing database has no saved
+credentials, Aggregare leaves its users alone and reports that manual setup is
+needed. Apmatia's supported one-time bootstrap publishes its five bundled
+prompt-only starters with a backing model from the selected upstream. Ysparr
+adds those explicitly published agent names as virtual models alongside real
+upstream models. If Apmatia is unavailable, Ysparr continues serving the real
+upstream models. Selecting an agent sends its compiled prompt as a system
+message and preserves the client's conversation; this integration does not
+provide Apmatia tools or memory through Ysparr. OpenIPE is installed from its
+pinned Python package revision as part of the default system. Open WebUI uses
+Ysparr, which the installer connects to an external llama.cpp endpoint during
+setup. Aggregare does not install llama.cpp or download model weights.
 HabitSync receives a
 generated local login; read it with `sudo cat /etc/aggregare/habitsync-credentials`
 and change it after the first sign-in. Back up this credentials file and
@@ -151,8 +165,9 @@ the installer neither downloads models nor starts a local inference server.
 Use the same playbook to upgrade:
 review the pinned images and revisions in the application catalog and
 `catalog/v1/presets/default.json`, update those pins deliberately, then apply
-again. Reapply is idempotent; removing an application preserves its data
-directories and generated HabitSync credentials.
+again. Reapply is idempotent; Apmatia's one-time bootstrap marker preserves
+edited or deleted starters and later publication choices. Removing an
+application preserves its data directories and generated credentials.
 
 ## LAN access
 
@@ -213,8 +228,8 @@ Some applications need extra setup:
   model file under `/var/lib/aggregare/llama.cpp/models`.
 - **ComfyUI** uses CPU mode and does not download model files. GPU setup is not
   part of this Phase 2 foundation.
-- **Apmatia**, **OpenIPE**, and **Redless** are Python packages or command-line
-  tools, not web dashboards.
+- **Apmatia** runs a loopback-only core API on port 8001. **OpenIPE** and
+  **Redless** remain Python packages or command-line tools.
 - **TroubleShell** is a desktop application. **Ladcemas** and **Sidecaravan**
   do not yet have installable roles.
 

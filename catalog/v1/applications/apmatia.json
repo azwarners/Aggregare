@@ -1,7 +1,7 @@
 {
   "id": "apmatia",
   "display_name": "Apmatia",
-  "description": "Apmatia curated application entry. The current role installs and import-verifies the Python package; it does not claim an HTTP service.",
+  "description": "Apmatia core API with persistent state, a protected first-user credential, a default upstream model, and published prompt-only starter agents.",
   "ownership": "aggregare",
   "category": "identity-context",
   "source": {
@@ -11,28 +11,27 @@
   "version": "0.0.1.7",
   "status": "experimental",
   "install_methods": [
-    "native-python-library"
+    "native-python-service"
   ],
   "capabilities": {
     "install": true,
     "update": true,
     "remove": true,
-    "verify": true
+    "verify": true,
+    "service_management": true
   },
-  "unsupported_operations": [
-    "service-management"
-  ],
   "entry_point": "ansible/playbooks/apmatia.yml",
   "deployments": [
     {
-      "method": "native-python-library",
+      "method": "native-python-service",
       "backend": "ansible",
       "entry_point": "ansible/playbooks/apmatia.yml",
-      "reference": "a72eeb8fd9319c304e98968d2be4124840540617",
+      "reference": "bddc27cb369579cc5f912a556aab1612e2034482",
       "requirements": [
         "system:git",
         "system:python3",
-        "system:python3-venv"
+        "system:python3-venv",
+        "system:openssl"
       ]
     }
   ],
@@ -52,9 +51,28 @@
   "dependencies": [
     "system:git",
     "system:python3",
-    "system:python3-venv"
+    "system:python3-venv",
+    "system:openssl"
   ],
   "conflicts": [],
-  "secret_references": [],
-  "integrations": []
+  "authentication": {
+    "methods": ["local"],
+    "bootstrap": {
+      "mode": "api",
+      "idempotent": true,
+      "credential_reference": "/etc/aggregare/apmatia-credentials.json",
+      "notes": "Fresh installs generate a first-user password; existing user databases without this saved credential are left unchanged."
+    },
+    "manual_steps": ["Back up the root-only first-user credential file securely."]
+  },
+  "secret_references": ["ansible-vault:ysparr_upstream_api_key"],
+  "services": [
+    {
+      "name": "apmatia-core.service",
+      "ports": [8001],
+      "data_paths": ["/var/lib/apmatia/app", "/var/lib/apmatia/data", "/var/lib/apmatia/config"],
+      "endpoints": ["http://127.0.0.1:8001/api/version", "http://127.0.0.1:8001/api/public/agents"]
+    }
+  ],
+  "integrations": ["ysparr-public-agents"]
 }

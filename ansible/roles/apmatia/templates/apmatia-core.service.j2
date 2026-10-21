@@ -1,0 +1,30 @@
+[Unit]
+Description=Apmatia core API
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=apmatia
+Group=apmatia
+WorkingDirectory=/opt/aggregare/apmatia
+Environment=APMATIA_HOME={{ apmatia_home }}
+Environment=APMATIA_DATA_DIR={{ apmatia_data_dir }}
+Environment=APMATIA_CONFIG_DIR={{ apmatia_config_dir }}
+Environment=APMATIA_SERVER_HOST={{ apmatia_host }}
+Environment=APMATIA_SERVER_PORT={{ apmatia_port }}
+ExecStart=/opt/aggregare/venvs/apmatia/bin/python /opt/aggregare/apmatia/scripts/run.py
+Restart=on-failure
+RestartSec=5s
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths={{ apmatia_home }} {{ apmatia_data_dir }} {{ apmatia_config_dir }}
+
+[Install]
+WantedBy=multi-user.target
