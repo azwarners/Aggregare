@@ -114,9 +114,11 @@ inventory's protected secret source and run the same command with `--become`
 without `--ask-become-pass`.
 
 The installer prompts for the llama.cpp base URL and checks `GET /v1/models`
-from the Aggregare host before installing the bundle. Enter the server root
-(`http://HOST:PORT`) or a URL ending in `/v1`; Ysparr stores a normalized root
-URL and adds `/v1` to API requests. The selected URL is saved in
+from the Aggregare host before installing the bundle. Enter the server address
+as `HOST:PORT` (for example `192.168.1.42:8000`) or include `http://` or
+`https://`; a missing scheme defaults to `http://`. A URL ending in `/v1` is
+also accepted. Ysparr stores a normalized root URL and adds `/v1` to API
+requests. The selected URL is saved in
 `/etc/aggregare/ysparr-upstream.json` with mode `0640`, owned by root and the
 Ysparr service group. Reapplying the playbook without an endpoint override
 reuses that saved value. The systemd environment file is also protected and

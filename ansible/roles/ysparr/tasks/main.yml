@@ -91,13 +91,20 @@
 
     - name: Select the effective Ysparr upstream settings
       ansible.builtin.set_fact:
-        ysparr_upstream_base_url_effective: >-
+        ysparr_upstream_base_url_selected: >-
           {{ (ysparr_upstream_base_url | default('', true) | trim)
              or (ysparr_saved_upstream_config.ysparr_upstream_base_url | default('http://127.0.0.1:4000')) }}
         ysparr_upstream_api_key_effective: >-
           {{ '' if ysparr_upstream_api_key_reset | bool else
              ((ysparr_upstream_api_key | default('', true) | trim)
              or (ysparr_saved_upstream_config.ysparr_upstream_api_key | default(''))) }}
+      no_log: true
+
+    - name: Add the default HTTP scheme when the upstream URL omits one
+      ansible.builtin.set_fact:
+        ysparr_upstream_base_url_effective: >-
+          {{ ysparr_upstream_base_url_selected if '://' in ysparr_upstream_base_url_selected
+             else 'http://' ~ ysparr_upstream_base_url_selected }}
       no_log: true
 
     - name: Validate the Ysparr upstream base URL

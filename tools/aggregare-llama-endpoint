@@ -19,6 +19,8 @@ def normalize_base_url(value: str) -> str:
     value = value.strip()
     if not value or any(character.isspace() for character in value):
         raise EndpointError("Enter a base URL such as http://192.168.1.20:8080 or https://llm.example:8443.")
+    if "://" not in value:
+        value = f"http://{value}"
 
     try:
         parsed = urlsplit(value)
