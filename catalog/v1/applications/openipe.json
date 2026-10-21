@@ -1,7 +1,7 @@
 {
   "id": "openipe",
   "display_name": "OpenIPE",
-  "description": "OpenIPE curated application entry. The current role installs and import-verifies the Python package; it does not claim an HTTP service.",
+  "description": "OpenIPE is part of the default Aggregare productivity operating system. The current role installs and import-verifies its pinned Python package; it does not claim an HTTP service.",
   "ownership": "aggregare",
   "category": "productivity",
   "source": {
@@ -9,7 +9,7 @@
     "upstream": "https://github.com/azwarners/OpenIPE"
   },
   "version": "0.0.1",
-  "status": "experimental",
+  "status": "supported",
   "install_methods": [
     "native-python-library"
   ],
@@ -40,7 +40,8 @@
     {
       "name": "ubuntu",
       "versions": [
-        "24.04"
+        "24.04",
+        "26.04"
       ],
       "architectures": [
         "amd64",

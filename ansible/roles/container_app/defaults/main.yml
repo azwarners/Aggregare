@@ -6,6 +6,7 @@ application_image: ''
 application_host_port: 8080
 application_container_port: 8080
 application_bind_address: 127.0.0.1
+application_host_network: false
 application_data_path: /var/lib/aggregare/app
 application_container_data_path: /data
 application_data_paths: []

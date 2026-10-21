@@ -32,7 +32,7 @@
   "platforms": [
     {
       "name": "ubuntu",
-      "versions": ["24.04"],
+      "versions": ["24.04", "26.04"],
       "architectures": ["amd64", "arm64"]
     }
   ],
@@ -50,19 +50,19 @@
     {
       "name": "BASE_URL",
       "type": "string",
-      "required": true,
-      "description": "User-facing HTTPS URL; must match OIDC callback configuration."
+      "required": false,
+      "description": "User-facing URL. Defaults to the host's loopback address; use the HTTPS URL when a TLS endpoint is configured."
     },
     {
       "name": "APP_SECURITY_ISSUERS_AGGREGARE_URL",
       "type": "string",
-      "required": true,
-      "description": "HTTPS issuer URL for the chosen OIDC provider."
+      "required": false,
+      "description": "Optional HTTPS issuer URL for an OIDC provider. Local login is configured by default."
     },
     {
       "name": "APP_SECURITY_ISSUERS_AGGREGARE_CLIENTID",
       "type": "string",
-      "required": true,
+      "required": false,
       "description": "OIDC public client ID; HabitSync uses PKCE and does not require a client secret for this issuer."
     },
     {
@@ -73,18 +73,20 @@
       "description": "Stable signing secret used to keep sessions valid across restarts; supply from a protected variable source."
     }
   ],
-  "secret_references": ["habitsync_jwt_secret"],
+  "secret_references": ["habitsync_jwt_secret", "habitsync_recovery_password"],
   "authentication": {
-    "methods": ["oidc", "api-token"],
+    "methods": ["local", "oidc", "api-token"],
     "bootstrap": {
       "mode": "first-run-ui",
       "idempotent": false,
-      "notes": "HabitSync accepts OIDC public clients with PKCE and supports approval for new users. User enrollment and approval remain deliberate first-run actions."
+      "credential_reference": "/etc/aggregare/habitsync-credentials",
+      "notes": "Aggregare creates a protected local account by default. HabitSync also accepts OIDC public clients with PKCE when an issuer is configured."
     },
     "token_lifecycle": ["generate", "revoke", "unknown"],
     "manual_steps": [
-      "Register a public OIDC client with the selected provider using the exact HabitSync HTTPS callback URL.",
-      "Approve the first OIDC user in HabitSync when new-user approval is enabled.",
+      "Retrieve the generated local login from /etc/aggregare/habitsync-credentials and change it after first sign-in.",
+      "When OIDC is configured, register a public client with the selected provider using the exact HabitSync HTTPS callback URL.",
+      "When OIDC is configured, approve the first OIDC user in HabitSync if new-user approval is enabled.",
       "Create and revoke API tokens in the user's profile when integrations need them."
     ],
     "oidc": {

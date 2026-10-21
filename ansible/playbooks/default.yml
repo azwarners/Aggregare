@@ -1,0 +1,10 @@
+---
+# The Aggregare operating-system baseline is additive: AI chat plus the
+# productivity applications that ship with the default system.
+- import_playbook: ysparr.yml
+- import_playbook: apmatia.yml
+- import_playbook: open-webui.yml
+- import_playbook: memos.yml
+- import_playbook: habitsync.yml
+- import_playbook: vikunja.yml
+- import_playbook: openipe.yml

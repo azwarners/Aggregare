@@ -39,7 +39,8 @@
     {
       "name": "ubuntu",
       "versions": [
-        "24.04"
+        "24.04",
+        "26.04"
       ],
       "architectures": [
         "amd64",

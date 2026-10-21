@@ -7,7 +7,7 @@
     application_image: ghcr.io/jofoerster/habitsync:0.19.3
     application_host_port: 6842
     application_container_port: 6842
-    application_bind_address: 127.0.0.1
+    application_bind_address: "{{ habitsync_bind_address | default('127.0.0.1') }}"
     application_data_path: /var/lib/aggregare/habitsync
     application_container_data_path: /data
     application_data_owner: '6842'
@@ -17,12 +17,14 @@
     application_java_trust_store: true
     application_add_hosts: "{{ aggregare_phase25_add_hosts | default([]) }}"
     application_environment:
-      BASE_URL: "{{ habitsync_base_url }}"
+      BASE_URL: "{{ habitsync_base_url | default('http://' ~ application_bind_address ~ ':6842') }}"
       SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
       JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/opt/java/openjdk/lib/security/cacerts
+{% if aggregare_oidc_provider is defined and aggregare_oidc_clients is defined and aggregare_oidc_clients.get('habitsync', {}).get('client_id') is defined %}
       "APP_SECURITY_ISSUERS_{{ aggregare_oidc_provider.slug }}_URL": "{{ aggregare_oidc_provider.issuer_url }}"
       "APP_SECURITY_ISSUERS_{{ aggregare_oidc_provider.slug }}_CLIENTID": "{{ aggregare_oidc_clients.habitsync.client_id }}"
       "APP_SECURITY_ISSUERS_{{ aggregare_oidc_provider.slug }}_NEEDSCONFIRMATION": "{{ habitsync_oidc_needs_confirmation | default('true') }}"
+{% endif %}
     application_secret_environment:
       JWT_SECRET: "{{ habitsync_jwt_secret }}"
       SPRING_APPLICATION_JSON: >-
@@ -30,37 +32,141 @@
           'app': {
             'security': {
               'basic-auth': {
-                'users': {habitsync_recovery_user: habitsync_recovery_password_hash}
+                'users': { (habitsync_recovery_user | default('aggregare')): habitsync_recovery_password_hash }
               }
             }
           }
         } | to_json }}
     application_health_path: /actuator/health
   pre_tasks:
-    - name: Require HabitSync OIDC and session configuration
+    - name: Validate HabitSync base URL and recovery account
       ansible.builtin.assert:
         that:
-          - habitsync_base_url is defined
-          - habitsync_base_url is match('^https://')
-          - not habitsync_base_url.endswith('/')
-          - aggregare_oidc_provider is defined
+          - (habitsync_base_url | default('http://' ~ application_bind_address ~ ':6842')) is match('^https?://')
+          - (habitsync_base_url | default('http://' ~ application_bind_address ~ ':6842')) is not match('/$')
+          - habitsync_recovery_user | default('aggregare') is match('^[a-z0-9][a-z0-9-]{0,35}$')
+        fail_msg: HabitSync needs a valid base URL and local recovery account name.
+      when: application_state | default('present') == 'present'
+
+    - name: Install HabitSync secret generation and password utilities
+      ansible.builtin.apt:
+        name: [apache2-utils, openssl]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      when: application_state | default('present') == 'present'
+
+    - name: Ensure protected directory for generated HabitSync credentials
+      ansible.builtin.file:
+        path: /etc/aggregare/secrets
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      when: application_state | default('present') == 'present'
+
+    - name: Create a stable HabitSync signing secret when none is configured
+      ansible.builtin.shell:
+        cmd: "umask 077; test -s /etc/aggregare/secrets/habitsync-jwt || openssl rand -hex 64 > /etc/aggregare/secrets/habitsync-jwt"
+      args:
+        creates: /etc/aggregare/secrets/habitsync-jwt
+      when:
+        - application_state | default('present') == 'present'
+        - habitsync_jwt_secret is not defined
+      no_log: true
+
+    - name: Create a stable HabitSync local login password when none is configured
+      ansible.builtin.shell:
+        cmd: "umask 077; test -s /etc/aggregare/secrets/habitsync-password || openssl rand -hex 24 > /etc/aggregare/secrets/habitsync-password"
+      args:
+        creates: /etc/aggregare/secrets/habitsync-password
+      when:
+        - application_state | default('present') == 'present'
+        - habitsync_recovery_password is not defined
+        - habitsync_recovery_password_hash is not defined
+      no_log: true
+
+    - name: Read the stable HabitSync signing secret
+      ansible.builtin.slurp:
+        src: /etc/aggregare/secrets/habitsync-jwt
+      register: habitsync_generated_jwt
+      when:
+        - application_state | default('present') == 'present'
+        - habitsync_jwt_secret is not defined
+      no_log: true
+
+    - name: Read the stable HabitSync local login password
+      ansible.builtin.slurp:
+        src: /etc/aggregare/secrets/habitsync-password
+      register: habitsync_generated_password
+      when:
+        - application_state | default('present') == 'present'
+        - habitsync_recovery_password is not defined
+        - habitsync_recovery_password_hash is not defined
+      no_log: true
+
+    - name: Set the generated HabitSync signing secret for this run
+      ansible.builtin.set_fact:
+        habitsync_jwt_secret: "{{ habitsync_generated_jwt.content | b64decode | trim }}"
+      when:
+        - application_state | default('present') == 'present'
+        - habitsync_jwt_secret is not defined
+      no_log: true
+
+    - name: Set the generated HabitSync recovery password for this run
+      ansible.builtin.set_fact:
+        habitsync_recovery_password: "{{ habitsync_generated_password.content | b64decode | trim }}"
+      when:
+        - application_state | default('present') == 'present'
+        - habitsync_recovery_password is not defined
+        - habitsync_recovery_password_hash is not defined
+      no_log: true
+
+    - name: Create the HabitSync local recovery password hash
+      ansible.builtin.command:
+        argv: [htpasswd, -niBC, '10', "{{ habitsync_recovery_user | default('aggregare') }}"]
+        stdin: "{{ habitsync_recovery_password }}"
+      register: habitsync_password_hash_result
+      changed_when: false
+      when:
+        - application_state | default('present') == 'present'
+        - habitsync_recovery_password_hash is not defined
+      no_log: true
+
+    - name: Set the HabitSync local recovery password hash
+      ansible.builtin.set_fact:
+        habitsync_recovery_password_hash: "{{ habitsync_password_hash_result.stdout.split(':', 1)[1] }}"
+      when:
+        - application_state | default('present') == 'present'
+        - habitsync_recovery_password_hash is not defined
+      no_log: true
+
+    - name: Store the initial HabitSync login for the administrator
+      ansible.builtin.copy:
+        dest: /etc/aggregare/habitsync-credentials
+        content: "username={{ habitsync_recovery_user | default('aggregare') }}\npassword={{ habitsync_recovery_password }}\n"
+        owner: root
+        group: root
+        mode: '0600'
+      when:
+        - application_state | default('present') == 'present'
+        - habitsync_recovery_password is defined
+      no_log: true
+
+    - name: Validate optional HabitSync OIDC configuration
+      ansible.builtin.assert:
+        that:
+          - (habitsync_base_url | default('http://' ~ application_bind_address ~ ':6842')) is not match('/$')
           - aggregare_oidc_provider.slug is match('^[A-Z0-9]+$')
           - aggregare_oidc_provider.issuer_url is match('^https://')
           - not aggregare_oidc_provider.issuer_url.endswith('/')
-          - aggregare_oidc_clients.habitsync.client_id is defined
-          - aggregare_oidc_clients.habitsync.client_id | length > 0
-          - habitsync_jwt_secret is defined
-          - habitsync_jwt_secret | length >= 64
-          - habitsync_recovery_user is defined
-          - habitsync_recovery_user is match('^[a-z0-9][a-z0-9-]{0,35}$')
-          - habitsync_recovery_password_hash is defined
-          - habitsync_recovery_password_hash is match('^[$]2[aby][$]')
-        fail_msg: >-
-          HabitSync needs its HTTPS base URL, a generic HTTPS OIDC provider and
-          client ID, stable JWT_SECRET, and local recovery account hash supplied
-          through a protected variable source.
-          Configure these values before installing the application.
-      when: application_state | default('present') == 'present'
+          - aggregare_oidc_clients.get('habitsync', {}).get('client_id') | length > 0
+        fail_msg: HabitSync OIDC configuration needs an HTTPS issuer and a client ID.
+      when:
+        - application_state | default('present') == 'present'
+        - aggregare_oidc_provider is defined
+        - aggregare_oidc_clients is defined
+        - aggregare_oidc_clients.get('habitsync', {}).get('client_id') is defined
   tasks:
     - name: Apply the shared OCI application role
       ansible.builtin.import_role:

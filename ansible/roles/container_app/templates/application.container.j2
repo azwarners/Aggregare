@@ -7,6 +7,9 @@ After=network-online.target
 ContainerName={{ application_id }}
 Image={{ application_image }}
 Timezone=local
+{% if application_host_network | default(false) %}
+Network=host
+{% endif %}
 {% if application_user | length > 0 %}
 User={{ application_user }}
 {% endif %}
@@ -16,7 +19,9 @@ AddHost={{ host.name }}:{{ host.address }}
 {% if 'TZ' not in (application_environment | default({})) %}
 Environment=TZ={{ host_timezone }}
 {% endif %}
+{% if not (application_host_network | default(false)) %}
 PublishPort={{ application_bind_address }}:{{ application_host_port }}:{{ application_container_port }}
+{% endif %}
 {% if application_system_ca_bundle | default(false) %}
 Volume=/etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
 {% endif %}

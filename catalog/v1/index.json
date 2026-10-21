@@ -11,6 +11,10 @@
       "path": "applications/ysparr.json"
     },
     {
+      "id": "open-webui",
+      "path": "applications/open-webui.json"
+    },
+    {
       "id": "sidecaravan",
       "path": "applications/sidecaravan.json"
     },
@@ -69,6 +73,16 @@
     {
       "id": "grafana",
       "path": "applications/grafana.json"
+    }
+  ],
+  "presets": [
+    {
+      "id": "default",
+      "path": "presets/default.json"
+    },
+    {
+      "id": "ai-chat",
+      "path": "presets/ai-chat.json"
     }
   ]
 }

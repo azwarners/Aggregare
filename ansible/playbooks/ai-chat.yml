@@ -1,0 +1,6 @@
+---
+# Applies the AI chat preset in dependency order. Components remain independently
+# manageable through their application playbooks.
+- import_playbook: ysparr.yml
+- import_playbook: apmatia.yml
+- import_playbook: open-webui.yml

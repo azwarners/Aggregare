@@ -1,0 +1,26 @@
+---
+- name: Install or remove Open WebUI
+  hosts: aggregare
+  become: true
+  vars:
+    application_id: open-webui
+    application_version: '0.11.4'
+    application_image: ghcr.io/open-webui/open-webui:v0.11.4
+    application_host_port: 8080
+    application_container_port: 8080
+    application_host_network: true
+    application_data_path: /var/lib/aggregare/open-webui
+    application_container_data_path: /app/backend/data
+    application_environment:
+      ENABLE_OPENAI_API: 'true'
+      OPENAI_API_BASE_URL: "{{ open_webui_openai_api_base_url | default('http://127.0.0.1:8000/v1') }}"
+      OPENAI_API_KEY: "{{ open_webui_openai_api_key | default('sk-aggregare-local') }}"
+      WEBUI_AUTH: 'true'
+      ENABLE_SIGNUP: 'true'
+      HOST: "{{ application_bind_address | default('127.0.0.1') }}"
+      PORT: '8080'
+    application_health_path: /health
+  tasks:
+  - name: Apply the shared OCI application role
+    ansible.builtin.import_role:
+      name: container_app

@@ -1,0 +1,85 @@
+{
+  "id": "open-webui",
+  "display_name": "Open WebUI",
+  "description": "Self-hosted chat interface configured to use Ysparr as its OpenAI-compatible provider.",
+  "ownership": "third-party",
+  "category": "ai-chat-client",
+  "source": {
+    "name": "open-webui/open-webui",
+    "upstream": "https://github.com/open-webui/open-webui"
+  },
+  "version": "0.11.4",
+  "status": "supported",
+  "install_methods": [
+    "oci-container"
+  ],
+  "capabilities": {
+    "install": true,
+    "update": true,
+    "remove": true,
+    "verify": true
+  },
+  "unsupported_operations": [
+    "automatic-backup",
+    "agent-tools-configuration"
+  ],
+  "entry_point": "ansible/playbooks/open-webui.yml",
+  "deployments": [
+    {
+      "method": "oci-container",
+      "backend": "ansible",
+      "entry_point": "ansible/playbooks/open-webui.yml",
+      "requirements": [
+        "system:podman>=4.9",
+        "application:ysparr"
+      ],
+      "reference": "ghcr.io/open-webui/open-webui:v0.11.4",
+      "image": "ghcr.io/open-webui/open-webui:v0.11.4"
+    }
+  ],
+  "platforms": [
+    {
+      "name": "ubuntu",
+      "versions": [
+        "24.04",
+        "26.04"
+      ],
+      "architectures": [
+        "amd64",
+        "arm64"
+      ]
+    }
+  ],
+  "dependencies": [
+    "system:podman>=4.9",
+    "application:ysparr"
+  ],
+  "conflicts": [],
+  "services": [
+    {
+      "name": "open-webui.service",
+      "ports": [
+        8080
+      ],
+      "data_paths": [
+        "/var/lib/aggregare/open-webui"
+      ],
+      "endpoints": [
+        "http://127.0.0.1:8080/health"
+      ]
+    }
+  ],
+  "configuration": [
+    {
+      "name": "open_webui_openai_api_base_url",
+      "type": "string",
+      "required": false,
+      "description": "Ysparr OpenAI-compatible API base URL; defaults to http://127.0.0.1:8000/v1 on the host."
+    }
+  ],
+  "secret_references": [],
+  "integrations": [
+    "application:ysparr",
+    "openai-compatible-http"
+  ]
+}

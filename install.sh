@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
-# Phase 2 bootstrap: install one fixed example through the shared Ansible role.
-# Application selection, presets, and previews belong to the Phase 3 client.
+# Install the Aggregare default operating-system bundle through shared Ansible roles.
 set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,7 +40,7 @@ esac
 ask_yes_no() {
   local answer
   while true; do
-    read -r -p "${1:-Should Memos be reachable by other devices on your private LAN? [y/N] }" answer
+    read -r -p "${1:-Should the user-facing applications be reachable by other devices on your private LAN? [y/N] }" answer
     case "${answer,,}" in
       y|yes) return 0 ;;
       ''|n|no) return 1 ;;
@@ -154,8 +153,7 @@ confirm_host_time
 select_identity_provider
 
 printf '\nAggregare Server v%s bootstrap\n' "$AGGREGARE_VERSION"
-printf 'This installs Memos as one example application through its Ansible playbook.\n'
-printf 'Other applications remain available through their direct Ansible playbooks.\n\n'
+printf 'The default operating-system bundle includes AI chat, Memos, HabitSync, Vikunja, and OpenIPE.\n\n'
 
 PACKAGES_TO_INSTALL=()
 if ! command -v ansible-playbook >/dev/null 2>&1; then
@@ -193,18 +191,18 @@ fi
 LAN_ACCESS=false
 LAN_ADDRESS=127.0.0.1
 LAN_SUBNET=""
-if ask_yes_no; then
+if ask_yes_no 'Should the user-facing applications be reachable by other devices on your private LAN? [y/N] '; then
   detect_lan_address || fail "I could not find a private IPv4 address on the default network interface. Configure the server's private LAN network and try again, or choose no."
   LAN_ACCESS=true
-  printf 'Memos will bind to %s (network %s).\n' "$LAN_ADDRESS" "$LAN_SUBNET"
+  printf 'User-facing applications will bind to %s (network %s).\n' "$LAN_ADDRESS" "$LAN_SUBNET"
 else
-  printf 'Memos will listen only on this server.\n'
+  printf 'User-facing applications will listen only on this server.\n'
 fi
 
 if [[ -e "$INVENTORY_FILE" ]]; then
   expected_inventory="$(printf '[aggregare]\nlocalhost ansible_connection=local\n')"
   existing_inventory="$(cat "$INVENTORY_FILE")"
-  [[ "$existing_inventory" == "$expected_inventory" ]] || fail "ansible/inventory.ini already contains custom settings. I left it untouched; run the Memos playbook directly with your inventory."
+  [[ "$existing_inventory" == "$expected_inventory" ]] || fail "ansible/inventory.ini already contains custom settings. I left it untouched; run the default playbook directly with your inventory."
 else
   cat > "$INVENTORY_FILE" <<'EOF'
 [aggregare]
@@ -212,12 +210,16 @@ localhost ansible_connection=local
 EOF
 fi
 
-MEMOS_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" <<'PY'
+BOOTSTRAP_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" <<'PY'
 import json
 import sys
 
 print(json.dumps({
     "application_bind_address": sys.argv[1],
+    "habitsync_bind_address": sys.argv[1],
+    "memos_base_url": f"http://{sys.argv[1]}:5230",
+    "habitsync_base_url": f"http://{sys.argv[1]}:6842",
+    "vikunja_base_url": f"http://{sys.argv[1]}:3456",
     "aggregare_identity_provider": sys.argv[2],
     "ansible_become": False,
 }))
@@ -239,18 +241,25 @@ PY
 cd "$ANSIBLE_DIR"
 sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/phase25-identity-config.yml \
   --extra-vars "{\"aggregare_identity_provider\":\"$IDENTITY_PROVIDER\",\"aggregare_identity_provider_update\":$IDENTITY_PROVIDER_UPDATE}"
-sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/memos.yml \
-  --extra-vars "$MEMOS_EXTRA_VARS"
+sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/default.yml \
+  --extra-vars "$BOOTSTRAP_EXTRA_VARS"
 sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/welcome.yml \
   --extra-vars "$WELCOME_EXTRA_VARS"
 
-printf '\nMemos installation finished. Its status record is /var/lib/aggregare/status/memos.json.\n'
+printf '\nAggregare default application bundle installation finished.\n'
 printf 'The Aggregare login banner is installed; log out and back in to see it.\n'
 if [[ "$LAN_ACCESS" == true ]]; then
-  printf 'Open Memos on the LAN at http://%s:5230/\n' "$LAN_ADDRESS"
+  printf 'User-facing applications on the LAN:\n'
+  printf '  Open WebUI: http://%s:8080/\n  Memos:      http://%s:5230/\n  HabitSync:  http://%s:6842/\n  Vikunja:    http://%s:3456/\n' "$LAN_ADDRESS" "$LAN_ADDRESS" "$LAN_ADDRESS" "$LAN_ADDRESS"
   printf 'If UFW blocks LAN connections, add this LAN-scoped rule:\n'
-  printf 'sudo ufw allow from %s to %s port 5230 proto tcp\n' "$LAN_SUBNET" "$LAN_ADDRESS"
+  for port in 8080 5230 6842 3456; do
+    printf 'sudo ufw allow from %s to %s port %s proto tcp\n' "$LAN_SUBNET" "$LAN_ADDRESS" "$port"
+  done
   printf 'Do not configure router port forwarding for this application.\n'
 else
-  printf 'Memos is local-only at http://127.0.0.1:5230/.\n'
+  printf 'User-facing applications on this server:\n'
+  printf '  Open WebUI: http://127.0.0.1:8080/\n  Memos:      http://127.0.0.1:5230/\n  HabitSync:  http://127.0.0.1:6842/\n  Vikunja:    http://127.0.0.1:3456/\n'
 fi
+printf 'Ysparr API: http://127.0.0.1:8000/v1. Apmatia and OpenIPE are installed from their pinned Python package revisions.\n'
+printf 'HabitSync local login is stored root-only at /etc/aggregare/habitsync-credentials; retrieve it with sudo cat and rotate it after first sign-in.\n'
+printf 'Set ysparr_upstream_base_url in inventory group variables when your llama.cpp endpoint differs from the default.\n'
