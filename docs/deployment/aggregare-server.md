@@ -109,6 +109,60 @@ provide Apmatia tools or memory through Ysparr. OpenIPE is installed from its
 pinned Python package revision as part of the default system. Open WebUI uses
 Ysparr, which the installer connects to an external llama.cpp endpoint during
 setup. Aggregare does not install llama.cpp or download model weights.
+
+### Open WebUI first use
+
+Open WebUI is an independent, boot-enabled `open-webui.service`. Its data and
+chats persist in `/var/lib/aggregare/open-webui/`. The installer prints the
+address selected by the loopback/LAN access prompt. The Open WebUI process
+shares the host network so it can reach Ysparr at
+`http://127.0.0.1:8000/v1`; its own web listener still follows the selected
+bind address. Aggregare configures this as the only model provider and disables
+Open WebUI's Ollama and direct-provider connections. It does not point Open
+WebUI at llama.cpp.
+
+On a fresh Open WebUI database, open the printed URL and create the first
+account in the browser. Open WebUI makes the first account an administrator.
+Sign-up is temporarily enabled for that initial setup; disable new sign-ups in
+**Admin Panel → Settings** after creating the account. If you keep sign-ups
+enabled, new accounts default to the pending role and require administrator
+approval. Until sign-up is disabled, keep access limited to trusted clients.
+Aggregare does not create an Open WebUI account or password on your behalf.
+
+After signing in, start a new chat and open the model selector. Ysparr exposes
+the upstream llama.cpp model IDs plus the published Apmatia starter names
+**Mira, Luna, Rowan, Belle, and Ivy**. If the list is empty or stale, verify
+Ysparr independently with:
+
+```sh
+curl --fail --silent --show-error http://127.0.0.1:8000/v1/models
+```
+
+For a direct streaming smoke check, replace `MODEL_ID_FROM_LIST` with one of
+the IDs returned above (for example, a published agent ID):
+
+```sh
+curl --no-buffer --fail --silent --show-error \
+  http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"MODEL_ID_FROM_LIST","messages":[{"role":"user","content":"Reply briefly."}],"stream":true}'
+```
+
+Then open **Admin Panel → Settings → Connections**, save or recheck the
+preconfigured Ysparr connection, and reload the model selector. Selecting an
+Apmatia virtual model sends its compiled system prompt through Ysparr; leave
+the model's Open WebUI system-prompt override empty if you want to preserve the
+Apmatia prompt as published. Complete a chat from the Open WebUI interface as a
+separate check; the command above tests Ysparr directly, not the browser path.
+
+Aggregare disables Open WebUI's Ollama, direct provider, web search, code
+execution, code interpreter, memory, and subagent features. It does not
+configure Open WebUI Knowledge/RAG, workspace tools, functions, or pipelines.
+The pinned Open WebUI version has no environment-level master switch for all
+of those features, so do not treat them as part of this integration or enable
+them without separately configuring and securing them. No Open WebUI plugin,
+pipeline, RAG, or custom agent content is installed by Aggregare.
+
 HabitSync receives a
 generated local login; read it with `sudo cat /etc/aggregare/habitsync-credentials`
 and change it after the first sign-in. Back up this credentials file and

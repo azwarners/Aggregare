@@ -1,7 +1,7 @@
 {
   "id": "open-webui",
   "display_name": "Open WebUI",
-  "description": "Self-hosted chat interface configured to use Ysparr as its OpenAI-compatible provider.",
+  "description": "Persistent self-hosted chat interface configured to use Ysparr as its sole model provider.",
   "ownership": "third-party",
   "category": "ai-chat-client",
   "source": {
@@ -21,7 +21,9 @@
   },
   "unsupported_operations": [
     "automatic-backup",
-    "agent-tools-configuration"
+    "agent-tools-configuration",
+    "rag-configuration",
+    "workspace-tools-and-pipelines-configuration"
   ],
   "entry_point": "ansible/playbooks/open-webui.yml",
   "deployments": [
@@ -69,14 +71,19 @@
       ]
     }
   ],
-  "configuration": [
-    {
-      "name": "open_webui_openai_api_base_url",
-      "type": "string",
-      "required": false,
-      "description": "Ysparr OpenAI-compatible API base URL; defaults to http://127.0.0.1:8000/v1 on the host."
-    }
-  ],
+  "configuration": [],
+  "authentication": {
+    "methods": ["local"],
+    "bootstrap": {
+      "mode": "first-run-ui",
+      "idempotent": true,
+      "notes": "The first account created through the browser on a fresh database becomes the administrator. Sign-up is enabled for first use and should be disabled in the Admin Panel after setup."
+    },
+    "manual_steps": [
+      "Create the first administrator account through the Open WebUI browser interface.",
+      "Disable new account sign-up in Admin Panel > Settings after creating the first account."
+    ]
+  },
   "secret_references": [],
   "integrations": [
     "application:ysparr",

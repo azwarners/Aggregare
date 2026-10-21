@@ -330,6 +330,8 @@ else
   printf '  Open WebUI: http://127.0.0.1:8080/\n  Memos:      http://127.0.0.1:5230/\n  HabitSync:  http://127.0.0.1:6842/\n  Vikunja:    http://127.0.0.1:3456/\n'
 fi
 printf 'Ysparr API: http://127.0.0.1:8000/v1. Apmatia core API: http://127.0.0.1:8001 (loopback only).\n'
+printf 'Open WebUI sign-up remains enabled for first use: create the first administrator account in the browser, then immediately disable sign-up in Admin Panel > Settings. Until then, allow access only from trusted clients.\n'
+printf 'Open WebUI is preconfigured to use Ysparr only. If models do not appear immediately, reopen the model selector or save the Ysparr connection in Admin Panel > Settings > Connections, then refresh the page.\n'
 printf 'On a fresh install, Apmatia first-user credentials are stored root-only at /etc/aggregare/apmatia-credentials.json; retrieve with sudo cat and keep a protected backup.\n'
 printf 'Apmatia publishes its five starter agents to Ysparr during fresh first-user setup. Ysparr continues to serve real upstream models if Apmatia is temporarily unavailable.\n'
 printf 'HabitSync local login is stored root-only at /etc/aggregare/habitsync-credentials; retrieve it with sudo cat and rotate it after first sign-in.\n'
