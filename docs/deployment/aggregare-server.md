@@ -222,6 +222,9 @@ review the pinned images and revisions in the application catalog and
 again. Reapply is idempotent; Apmatia's one-time bootstrap marker preserves
 edited or deleted starters and later publication choices. Removing an
 application preserves its data directories and generated credentials.
+For service lifecycle, network boundaries, diagnostic output, backup/restore,
+and the VM smoke-check sequence, see
+[AI chat operations](aggregare-ai-chat-operations.md).
 
 ## LAN access
 

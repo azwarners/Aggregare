@@ -334,5 +334,7 @@ printf 'Open WebUI sign-up remains enabled for first use: create the first admin
 printf 'Open WebUI is preconfigured to use Ysparr only. If models do not appear immediately, reopen the model selector or save the Ysparr connection in Admin Panel > Settings > Connections, then refresh the page.\n'
 printf 'On a fresh install, Apmatia first-user credentials are stored root-only at /etc/aggregare/apmatia-credentials.json; retrieve with sudo cat and keep a protected backup.\n'
 printf 'Apmatia publishes its five starter agents to Ysparr during fresh first-user setup. Ysparr continues to serve real upstream models if Apmatia is temporarily unavailable.\n'
+printf 'For a redacted AI-chat status report, run: sudo ./tools/aggregare-ai-chat-diagnose\n'
+printf 'Lifecycle, network, backup/restore, and VM smoke-check steps: docs/deployment/aggregare-ai-chat-operations.md\n'
 printf 'HabitSync local login is stored root-only at /etc/aggregare/habitsync-credentials; retrieve it with sudo cat and rotate it after first sign-in.\n'
 printf 'AI chat upstream: %s (checked at /v1/models). Reapply the default playbook to update it; the value is saved in /etc/aggregare/ysparr-upstream.json.\n' "$LLAMA_CPP_URL"

@@ -2,6 +2,12 @@
 Description=Aggregare managed {{ application_id }} container
 Wants=network-online.target
 After=network-online.target
+{% for unit in application_unit_wants | default([]) %}
+Wants={{ unit }}
+{% endfor %}
+{% for unit in application_unit_after | default([]) %}
+After={{ unit }}
+{% endfor %}
 
 [Container]
 ContainerName={{ application_id }}

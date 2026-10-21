@@ -1,0 +1,41 @@
+---
+- name: Validate the configured service port
+  ansible.builtin.assert:
+    that:
+      - port_check_port | int >= 1
+      - port_check_port | int <= 65535
+    fail_msg: "{{ port_check_service }} must use a TCP port from 1 through 65535."
+
+- name: Check whether the managed service is already active
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - --quiet
+      - "{{ port_check_service }}"
+  register: port_check_service_active
+  changed_when: false
+  failed_when: false
+
+- name: Inspect current TCP listeners
+  ansible.builtin.command:
+    argv:
+      - ss
+      - -H
+      - -ltn
+  register: port_check_listeners
+  changed_when: false
+  when: port_check_service_active.rc != 0
+
+- name: Reject a port already occupied on the host
+  ansible.builtin.assert:
+    that:
+      - >-
+        port_check_listeners.stdout_lines
+        | select('search', ':' ~ (port_check_port | string) ~ '\s')
+        | list
+        | length == 0
+    fail_msg: >-
+      TCP port {{ port_check_port }} required by {{ port_check_service }} already
+      has a listener. Inspect `sudo ss -ltnp`, choose a free port, and reapply.
+  when: port_check_service_active.rc != 0

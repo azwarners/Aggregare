@@ -9,6 +9,14 @@
       - ansible_facts.distribution_version is version('24.04', '>=')
     fail_msg: Apmatia is supported on Ubuntu 24.04+ and is intentionally bound to loopback.
 
+- name: Check the Apmatia port contract
+  ansible.builtin.import_role:
+    name: port_check
+  vars:
+    port_check_port: "{{ apmatia_port }}"
+    port_check_service: apmatia-core.service
+  when: apmatia_state == 'present'
+
 - name: Remove Apmatia service and application
   when: apmatia_state == 'absent'
   block:
@@ -342,9 +350,9 @@
           - apmatia_ysparr_models.json.data is not string
           - (apmatia_ysparr_models.json.data | map(attribute='id') | list | select('in', (apmatia_public_agents.json | map(attribute='name') | list)) | list | length) == (apmatia_public_agents.json | length)
           - apmatia_upstream_models.json.data[0].id in (apmatia_ysparr_models.json.data | map(attribute='id') | list)
-      fail_msg: >-
-        Ysparr must expose every currently published Apmatia agent alongside the
-        selected upstream model. Check its Apmatia URL and restart Ysparr if needed.
+        fail_msg: >-
+          Ysparr must expose every currently published Apmatia agent alongside the
+          selected upstream model. Check its Apmatia URL and restart Ysparr if needed.
       when: apmatia_session_cookie is defined
 
     - name: Leave existing Apmatia accounts untouched when no saved credentials are available

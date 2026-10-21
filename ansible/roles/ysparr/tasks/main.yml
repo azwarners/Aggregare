@@ -7,6 +7,14 @@
       - ansible_facts.distribution_version is version('24.04', '>=')
     fail_msg: Ysparr is currently supported on Ubuntu 24.04 and later.
 
+- name: Check the Ysparr port contract
+  ansible.builtin.import_role:
+    name: port_check
+  vars:
+    port_check_port: "{{ ysparr_port }}"
+    port_check_service: ysparr.service
+  when: ysparr_state == 'present'
+
 - name: Remove Ysparr service and software
   when: ysparr_state == 'absent'
   block:

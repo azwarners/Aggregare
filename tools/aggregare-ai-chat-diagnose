@@ -1,0 +1,257 @@
+#!/usr/bin/env python3
+"""Report AI chat deployment health without printing endpoint secrets."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import shutil
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+
+UPSTREAM_CONFIG = Path("/etc/aggregare/ysparr-upstream.json")
+YSPARR_ENV = Path("/etc/aggregare/ysparr.env")
+OPEN_WEBUI_QUADLET = Path("/etc/containers/systemd/open-webui.container")
+APMATIA_SERVICE = Path("/etc/systemd/system/apmatia-core.service")
+TIMEOUT = 4
+
+
+def http_get(url: str, api_key: str = "") -> tuple[int | None, object | None, str]:
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        with urlopen(Request(url, headers=headers), timeout=TIMEOUT) as response:
+            body = response.read(2_000_000)
+            try:
+                payload: object | None = json.loads(body)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                payload = None
+            return response.status, payload, ""
+    except HTTPError as error:
+        return error.code, None, "http_error"
+    except (URLError, TimeoutError, OSError, ValueError):
+        return None, None, "unreachable"
+
+
+def read_env(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, sep, raw = line.partition("=")
+            if not sep:
+                continue
+            raw = raw.strip()
+            try:
+                decoded = json.loads(raw)
+                values[key] = str(decoded)
+            except json.JSONDecodeError:
+                values[key] = raw.strip('"')
+    except (OSError, UnicodeDecodeError):
+        pass
+    return values
+
+
+def systemd_state(service: str) -> dict[str, str]:
+    if not shutil.which("systemctl"):
+        return {"active": "unknown", "enabled": "unknown"}
+    result = {}
+    for key, args in (
+        ("active", ["is-active", service]),
+        ("enabled", ["is-enabled", service]),
+    ):
+        try:
+            completed = subprocess.run(
+                ["systemctl", *args], capture_output=True, text=True, timeout=TIMEOUT, check=False
+            )
+            result[key] = completed.stdout.strip() or "unknown"
+        except (OSError, subprocess.TimeoutExpired):
+            result[key] = "unknown"
+    return result
+
+
+def extract_environment(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = re.match(r"Environment=([A-Z0-9_]+)=(.*)$", line)
+            if match:
+                values[match.group(1)] = match.group(2).strip().strip('"')
+    except (OSError, UnicodeDecodeError):
+        pass
+    return values
+
+
+def extract_service_environment(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = re.match(r"Environment=([A-Z0-9_]+)=(.*)$", line)
+            if match:
+                values[match.group(1)] = match.group(2).strip().strip('"')
+    except (OSError, UnicodeDecodeError):
+        pass
+    return values
+
+
+def model_ids(payload: object | None) -> list[str]:
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        return []
+    return [row["id"] for row in payload["data"] if isinstance(row, dict) and isinstance(row.get("id"), str)]
+
+
+def make_report() -> dict[str, object]:
+    upstream: dict[str, object] = {
+        "configured": False,
+        "authenticated": "unknown",
+        "reachable": False,
+        "models_discovered": 0,
+    }
+    try:
+        saved = json.loads(UPSTREAM_CONFIG.read_text(encoding="utf-8"))
+        base_url = saved.get("ysparr_upstream_base_url", "").rstrip("/")
+        api_key = saved.get("ysparr_upstream_api_key", "")
+        if isinstance(base_url, str) and base_url.startswith(("http://", "https://")):
+            upstream["configured"] = True
+            status, payload, error = http_get(f"{base_url}/v1/models", api_key if isinstance(api_key, str) else "")
+            upstream["reachable"] = status == 200
+            upstream["models_discovered"] = len(model_ids(payload))
+            if status == 200:
+                upstream["authenticated"] = "passed" if api_key else "not_required"
+            elif status in (401, 403):
+                upstream["authenticated"] = "failed" if api_key else "required_not_configured"
+            elif error == "unreachable":
+                upstream["authenticated"] = "unknown"
+            else:
+                upstream["authenticated"] = "not_assessed"
+            upstream["http_status"] = status
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+        upstream["configuration_readable"] = False
+
+    ysparr_env = read_env(YSPARR_ENV)
+    ysparr_host = ysparr_env.get("YSPARR_HOST", "127.0.0.1")
+    try:
+        ysparr_port = int(ysparr_env.get("YSPARR_PORT", "8000"))
+    except ValueError:
+        ysparr_port = 8000
+    ysparr_root = f"http://{ysparr_host}:{ysparr_port}"
+    ysparr_health, _, _ = http_get(f"{ysparr_root}/health")
+    ysparr_status, ysparr_payload, _ = http_get(f"{ysparr_root}/v1/models")
+    ysparr_ids = model_ids(ysparr_payload)
+
+    apmatia_env = extract_service_environment(APMATIA_SERVICE)
+    apmatia_host = apmatia_env.get("APMATIA_SERVER_HOST", "127.0.0.1")
+    try:
+        apmatia_port = int(apmatia_env.get("APMATIA_SERVER_PORT", "8001"))
+    except ValueError:
+        apmatia_port = 8001
+    apmatia_root = f"http://{apmatia_host}:{apmatia_port}"
+    apmatia_health, _, _ = http_get(f"{apmatia_root}/api/version")
+    apmatia_agents_status, apmatia_payload, _ = http_get(f"{apmatia_root}/api/public/agents")
+    agents = apmatia_payload if isinstance(apmatia_payload, list) else []
+    agent_names = [item["name"] for item in agents if isinstance(item, dict) and isinstance(item.get("name"), str)]
+
+    webui_env = extract_environment(OPEN_WEBUI_QUADLET)
+    webui_host = webui_env.get("HOST", "127.0.0.1")
+    try:
+        webui_port = int(webui_env.get("PORT", "8080"))
+    except ValueError:
+        webui_port = 8080
+    webui_health, _, _ = http_get(f"http://{webui_host}:{webui_port}/health")
+    configured_target = webui_env.get("OPENAI_API_BASE_URL", "").rstrip("/")
+    expected_target = f"http://{ysparr_host}:{ysparr_port}/v1"
+    provider_configured = bool(configured_target) and configured_target == expected_target
+
+    services = {
+        "ysparr": systemd_state("ysparr.service"),
+        "apmatia": systemd_state("apmatia-core.service"),
+        "open_webui": systemd_state("open-webui.service"),
+    }
+    core_ok = (
+        ysparr_health == 200
+        and ysparr_status == 200
+        and bool(ysparr_ids)
+        and webui_health == 200
+        and upstream["reachable"]
+        and int(upstream["models_discovered"]) > 0
+    )
+    apmatia_ok = apmatia_health == 200 and apmatia_agents_status == 200
+    report_status = "healthy" if core_ok and apmatia_ok and provider_configured else "partial"
+    return {
+        "schema_version": "v1",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "status": report_status,
+        "configured": {
+            "upstream_endpoint": upstream["configured"],
+            "open_webui_provider_targets_ysparr": provider_configured,
+            "note": "The Open WebUI admin connection saved in its database must also be checked in the browser.",
+        },
+        "services": services,
+        "upstream": upstream,
+        "ysparr": {
+            "reachable": ysparr_health == 200,
+            "models_endpoint_reachable": ysparr_status == 200,
+            "models_discovered": len(ysparr_ids),
+            "published_agents_visible": sum(name in ysparr_ids for name in agent_names),
+        },
+        "apmatia": {
+            "reachable": apmatia_health == 200,
+            "public_agents_endpoint_reachable": apmatia_agents_status == 200,
+            "agents_published": len(agent_names),
+            "agents_visible_in_ysparr": sum(name in ysparr_ids for name in agent_names),
+            "partial_health_is_expected_when_unavailable": True,
+        },
+        "open_webui": {
+            "reachable": webui_health == 200,
+            "end_to_end_chat": "not_tested; sign in and send a browser chat",
+        },
+        "manual_checks": [
+            "In Open WebUI, Admin Panel > Settings > Connections should point to Ysparr and list expected models.",
+            "Send a chat in the browser; direct HTTP model checks do not prove end-to-end chat.",
+        ],
+    }
+
+
+def render_text(report: dict[str, object]) -> None:
+    print(f"AI chat diagnostic: {report['status']}")
+    print("Services:")
+    for name, state in report["services"].items():
+        print(f"  {name}: active={state['active']}, enabled={state['enabled']}")
+    print(
+        f"Configured: upstream={report['upstream']['configured']}, "
+        f"Open WebUI→Ysparr={report['configured']['open_webui_provider_targets_ysparr']}"
+    )
+    print(
+        f"Upstream: reachable={report['upstream']['reachable']}, "
+        f"authenticated={report['upstream']['authenticated']}, "
+        f"models={report['upstream']['models_discovered']}"
+    )
+    print(f"Ysparr: reachable={report['ysparr']['reachable']}, models={report['ysparr']['models_discovered']}")
+    print(
+        f"Apmatia: reachable={report['apmatia']['reachable']}, "
+        f"published_agents={report['apmatia']['agents_published']}, "
+        f"visible_in_Ysparr={report['apmatia']['agents_visible_in_ysparr']}"
+    )
+    print(f"Open WebUI: reachable={report['open_webui']['reachable']}, end_to_end_chat={report['open_webui']['end_to_end_chat']}")
+    print("No endpoint URL, API key, or credential value is included in this report.")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--json", action="store_true", help="print the report as JSON")
+    args = parser.parse_args()
+    report = make_report()
+    if args.json:
+        json.dump(report, sys.stdout, indent=2)
+        print()
+    else:
+        render_text(report)
+    return 0 if report["status"] == "healthy" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

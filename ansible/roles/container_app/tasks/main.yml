@@ -14,6 +14,14 @@
       - application_image is match('^[^ ]+:[^ ]+$')
     fail_msg: Container catalog roles currently require Ubuntu 24.04+, a pinned image tag, and valid absolute data paths and ports.
 
+- name: Check the application port contract
+  ansible.builtin.import_role:
+    name: port_check
+  vars:
+    port_check_port: "{{ application_host_port }}"
+    port_check_service: "{{ application_id }}.service"
+  when: application_state == 'present'
+
 - name: Remove container application service
   when: application_state == 'absent'
   block:

@@ -11,6 +11,8 @@
     # Open WebUI shares the host network so it can reach Ysparr on loopback;
     # only its own HTTP listener follows Aggregare's explicit bind policy.
     application_host_network: true
+    application_unit_after: [ysparr.service]
+    application_unit_wants: [ysparr.service]
     application_data_path: /var/lib/aggregare/open-webui
     application_container_data_path: /app/backend/data
     application_environment:

@@ -16,15 +16,25 @@
     application_system_ca_bundle: true
     application_java_trust_store: true
     application_add_hosts: "{{ aggregare_phase25_add_hosts | default([]) }}"
-    application_environment:
-      BASE_URL: "{{ habitsync_base_url | default('http://' ~ application_bind_address ~ ':6842') }}"
-      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
-      JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/opt/java/openjdk/lib/security/cacerts
-{% if aggregare_oidc_provider is defined and aggregare_oidc_clients is defined and aggregare_oidc_clients.get('habitsync', {}).get('client_id') is defined %}
-      "APP_SECURITY_ISSUERS_{{ aggregare_oidc_provider.slug }}_URL": "{{ aggregare_oidc_provider.issuer_url }}"
-      "APP_SECURITY_ISSUERS_{{ aggregare_oidc_provider.slug }}_CLIENTID": "{{ aggregare_oidc_clients.habitsync.client_id }}"
-      "APP_SECURITY_ISSUERS_{{ aggregare_oidc_provider.slug }}_NEEDSCONFIRMATION": "{{ habitsync_oidc_needs_confirmation | default('true') }}"
-{% endif %}
+    application_environment: >-
+      {{
+        {
+          'BASE_URL': habitsync_base_url | default('http://' ~ application_bind_address ~ ':6842'),
+          'SSL_CERT_FILE': '/etc/ssl/certs/ca-certificates.crt',
+          'JAVA_TOOL_OPTIONS': '-Djavax.net.ssl.trustStore=/opt/java/openjdk/lib/security/cacerts'
+        }
+        | combine(
+          {
+            ('APP_SECURITY_ISSUERS_' ~ aggregare_oidc_provider.slug ~ '_URL'): aggregare_oidc_provider.issuer_url,
+            ('APP_SECURITY_ISSUERS_' ~ aggregare_oidc_provider.slug ~ '_CLIENTID'): aggregare_oidc_clients.habitsync.client_id,
+            ('APP_SECURITY_ISSUERS_' ~ aggregare_oidc_provider.slug ~ '_NEEDSCONFIRMATION'): habitsync_oidc_needs_confirmation | default('true')
+          }
+          if aggregare_oidc_provider is defined
+            and aggregare_oidc_clients is defined
+            and aggregare_oidc_clients.get('habitsync', {}).get('client_id') is defined
+          else {}
+        )
+      }}
     application_secret_environment:
       JWT_SECRET: "{{ habitsync_jwt_secret }}"
       SPRING_APPLICATION_JSON: >-
