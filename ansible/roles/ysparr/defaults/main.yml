@@ -4,9 +4,11 @@ ysparr_version: 0.1.0
 ysparr_source_ref: 264bc9c10ea3efdc21059767b58f20c4b07897cb
 ysparr_host: 127.0.0.1
 ysparr_port: 8000
-ysparr_upstream_base_url: http://127.0.0.1:4000
+ysparr_upstream_base_url: ''
 ysparr_database_path: /var/lib/ysparr/ysparr.sqlite3
 ysparr_upstream_api_key: ''
+ysparr_upstream_api_key_reset: false
+ysparr_upstream_config_path: /etc/aggregare/ysparr-upstream.json
 ysparr_retention_completed: 7d
 ysparr_retention_failed: 24h
 ysparr_retention_orphaned: 30d

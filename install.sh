@@ -10,6 +10,7 @@ VERSION_FILE="$PROJECT_ROOT/VERSION"
 IDENTITY_CONFIG_FILE="/etc/aggregare/identity.json"
 IDENTITY_PROVIDER=""
 IDENTITY_PROVIDER_UPDATE=false
+LLAMA_CPP_URL=""
 
 while (($#)); do
   case "$1" in
@@ -19,8 +20,13 @@ while (($#)); do
       IDENTITY_PROVIDER_UPDATE=true
       shift 2
       ;;
+    --llama-cpp-url)
+      (($# >= 2)) || { printf 'Installer stopped: --llama-cpp-url needs an http:// or https:// OpenAI-compatible server base URL.\n' >&2; exit 2; }
+      LLAMA_CPP_URL="$2"
+      shift 2
+      ;;
     --help|-h)
-      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none]\n'
+      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--llama-cpp-url URL]\n'
       exit 0
       ;;
     *) printf 'Installer stopped: unknown option: %s\n' "$1" >&2; exit 2 ;;
@@ -71,6 +77,61 @@ select_identity_provider() {
     esac
   fi
   case "$IDENTITY_PROVIDER" in kanidm|external_oidc|none) ;; *) fail "invalid identity provider '$IDENTITY_PROVIDER'; choose kanidm, external_oidc, or none." ;; esac
+}
+
+select_llama_cpp_endpoint() {
+  local saved_url="" candidate="" probe_output="" probe_status=0 normalized_url=""
+  local config_file=/etc/aggregare/ysparr-upstream.json
+
+  if sudo test -r "$config_file"; then
+    saved_url="$(sudo python3 - "$config_file" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as config_file:
+        print(json.load(config_file).get("ysparr_upstream_base_url", ""))
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(1)
+PY
+    )" || fail "the saved Ysparr upstream configuration is invalid; review $config_file."
+  fi
+
+  if [[ -n "$LLAMA_CPP_URL" ]]; then
+    candidate="$LLAMA_CPP_URL"
+  else
+    [[ -t 0 ]] || {
+      [[ -n "$saved_url" ]] && { LLAMA_CPP_URL="$saved_url"; return 0; }
+      fail "a reachable external llama.cpp endpoint is required in noninteractive mode; pass --llama-cpp-url URL or set ysparr_upstream_base_url in inventory."
+    }
+    printf '\nConnect AI chat to an OpenAI-compatible llama.cpp server.\n'
+    printf 'Enter its base URL as seen from this Aggregare server (for example http://192.168.1.20:8080). A trailing /v1 is accepted.\n'
+    while true; do
+      read -r -p "llama.cpp server URL${saved_url:+ [$saved_url]}: " candidate
+      candidate="${candidate:-$saved_url}"
+      [[ -n "$candidate" ]] || { printf 'Enter the reachable server URL.\n'; continue; }
+      probe_output="$("$PROJECT_ROOT/tools/aggregare-llama-endpoint" "$candidate" 2>&1)" || probe_status=$?
+      if ((probe_status == 0 || probe_status == 3)); then
+        printf '%s\n' "$probe_output"
+        normalized_url="$(awk '/^Using Ysparr upstream base URL:/ { sub(/^Using Ysparr upstream base URL: /, ""); print; exit }' <<<"$probe_output")"
+        [[ -n "$normalized_url" ]] || fail "could not normalize the selected llama.cpp endpoint."
+        LLAMA_CPP_URL="$normalized_url"
+        return 0
+      fi
+      printf '%s\n' "$probe_output" >&2
+      probe_status=0
+    done
+  fi
+
+  probe_status=0
+  probe_output="$("$PROJECT_ROOT/tools/aggregare-llama-endpoint" "$candidate" 2>&1)" || probe_status=$?
+  if ((probe_status != 0 && probe_status != 3)); then
+    printf '%s\n' "$probe_output" >&2
+    fail "the provided llama.cpp endpoint did not pass validation."
+  fi
+  printf '%s\n' "$probe_output"
+  LLAMA_CPP_URL="$(awk '/^Using Ysparr upstream base URL:/ { sub(/^Using Ysparr upstream base URL: /, ""); print; exit }' <<<"$probe_output")"
+  [[ -n "$LLAMA_CPP_URL" ]] || fail "could not normalize the selected llama.cpp endpoint."
 }
 
 confirm_host_time() {
@@ -151,6 +212,7 @@ command -v python3 >/dev/null 2>&1 || fail "Python 3 is required by Ubuntu and w
 command -v ip >/dev/null 2>&1 || fail "the ip command is missing; install Ubuntu's iproute2 package first."
 confirm_host_time
 select_identity_provider
+select_llama_cpp_endpoint
 
 printf '\nAggregare Server v%s bootstrap\n' "$AGGREGARE_VERSION"
 printf 'The default operating-system bundle includes AI chat, Memos, HabitSync, Vikunja, and OpenIPE.\n\n'
@@ -210,7 +272,7 @@ localhost ansible_connection=local
 EOF
 fi
 
-BOOTSTRAP_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" <<'PY'
+BOOTSTRAP_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" "$LLAMA_CPP_URL" <<'PY'
 import json
 import sys
 
@@ -221,6 +283,7 @@ print(json.dumps({
     "habitsync_base_url": f"http://{sys.argv[1]}:6842",
     "vikunja_base_url": f"http://{sys.argv[1]}:3456",
     "aggregare_identity_provider": sys.argv[2],
+    "ysparr_upstream_base_url": sys.argv[3],
     "ansible_become": False,
 }))
 PY
@@ -238,11 +301,17 @@ print(json.dumps({
 PY
 )"
 
+ANSIBLE_VAULT_ARGS=()
+VAULT_VARS_FILE="$ANSIBLE_DIR/group_vars/aggregare/vault.yml"
+if [[ -f "$VAULT_VARS_FILE" ]] && grep -q '^\$ANSIBLE_VAULT;' "$VAULT_VARS_FILE"; then
+  ANSIBLE_VAULT_ARGS+=(--ask-vault-pass)
+fi
+
 cd "$ANSIBLE_DIR"
 sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/phase25-identity-config.yml \
   --extra-vars "{\"aggregare_identity_provider\":\"$IDENTITY_PROVIDER\",\"aggregare_identity_provider_update\":$IDENTITY_PROVIDER_UPDATE}"
 sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/default.yml \
-  --extra-vars "$BOOTSTRAP_EXTRA_VARS"
+  --extra-vars "$BOOTSTRAP_EXTRA_VARS" "${ANSIBLE_VAULT_ARGS[@]}"
 sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/welcome.yml \
   --extra-vars "$WELCOME_EXTRA_VARS"
 
@@ -262,4 +331,4 @@ else
 fi
 printf 'Ysparr API: http://127.0.0.1:8000/v1. Apmatia and OpenIPE are installed from their pinned Python package revisions.\n'
 printf 'HabitSync local login is stored root-only at /etc/aggregare/habitsync-credentials; retrieve it with sudo cat and rotate it after first sign-in.\n'
-printf 'Set ysparr_upstream_base_url in inventory group variables when your llama.cpp endpoint differs from the default.\n'
+printf 'AI chat upstream: %s (checked at /v1/models). Reapply the default playbook to update it; the value is saved in /etc/aggregare/ysparr-upstream.json.\n' "$LLAMA_CPP_URL"

@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Validate and probe an external OpenAI-compatible llama.cpp endpoint."""
+
+from __future__ import annotations
+
+import json
+import socket
+import sys
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit, urlunsplit
+from urllib.request import Request, urlopen
+
+
+class EndpointError(Exception):
+    """A user-actionable endpoint configuration or reachability problem."""
+
+
+def normalize_base_url(value: str) -> str:
+    value = value.strip()
+    if not value or any(character.isspace() for character in value):
+        raise EndpointError("Enter a base URL such as http://192.168.1.20:8080 or https://llm.example:8443.")
+
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port
+    except ValueError as error:
+        raise EndpointError("The URL is malformed. Check its host and port.") from error
+
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise EndpointError("Use an http:// or https:// URL with a reachable host and port.")
+    if parsed.username is not None or parsed.password is not None:
+        raise EndpointError("Do not put credentials in the URL. Configure an API key through Ansible Vault.")
+    if parsed.query or parsed.fragment:
+        raise EndpointError("Do not include a query string or fragment in the server base URL.")
+    if parsed.path not in {"", "/", "/v1", "/v1/"}:
+        raise EndpointError("Use the server root URL, optionally ending in /v1; other URL paths are not supported.")
+
+    # Ysparr appends /v1/... itself. Accept either common input convention.
+    return urlunsplit((parsed.scheme, parsed.netloc, "", "", "")).rstrip("/")
+
+
+def probe(base_url: str) -> int:
+    endpoint = f"{base_url}/v1/models"
+    request = Request(endpoint, headers={"Accept": "application/json"})
+    try:
+        with urlopen(request, timeout=8) as response:
+            payload = json.load(response)
+    except HTTPError as error:
+        if error.code in {401, 403}:
+            print(
+                "The endpoint is reachable but requires authentication. Add ysparr_upstream_api_key "
+                "to the protected Ansible Vault variables; Ysparr will verify it during installation.",
+                file=sys.stderr,
+            )
+            return 3
+        if error.code == 404:
+            raise EndpointError(
+                f"GET {endpoint} returned 404. Check the host, port, and whether the server exposes the OpenAI /v1/models API."
+            ) from error
+        raise EndpointError(f"GET {endpoint} returned HTTP {error.code}.") from error
+    except URLError as error:
+        reason = error.reason
+        if isinstance(reason, socket.gaierror):
+            raise EndpointError(f"Could not resolve {urlsplit(base_url).hostname}. Check DNS and the server name.") from error
+        if isinstance(reason, (ConnectionRefusedError, TimeoutError, OSError)):
+            host = urlsplit(base_url).hostname
+            loopback_note = (
+                " If llama.cpp runs in a container, its 127.0.0.1 is the container itself; publish the port "
+                "on its host and use that host address from Aggregare."
+                if host in {"localhost", "127.0.0.1", "::1"}
+                else ""
+            )
+            raise EndpointError(
+                f"Could not connect to {base_url}. Confirm llama.cpp is running and the port is reachable from the Aggregare server.{loopback_note}"
+            ) from error
+        raise EndpointError(f"Could not reach {endpoint}: {reason}.") from error
+    except (TimeoutError, OSError) as error:
+        raise EndpointError(f"Could not reach {endpoint}: {error}.") from error
+    except json.JSONDecodeError as error:
+        raise EndpointError(f"GET {endpoint} did not return JSON. Check that this is an OpenAI-compatible endpoint.") from error
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        raise EndpointError(f"GET {endpoint} returned JSON without a models list in its data field.")
+    if not payload["data"]:
+        raise EndpointError(f"GET {endpoint} succeeded but listed no loaded models. Load a model on the llama.cpp server, then retry.")
+    print(f"Endpoint verified: GET {endpoint} returned {len(payload['data'])} model(s).")
+    return 0
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print(f"Usage: {sys.argv[0]} BASE_URL", file=sys.stderr)
+        return 2
+    try:
+        base_url = normalize_base_url(sys.argv[1])
+        print(f"Using Ysparr upstream base URL: {base_url}")
+        return probe(base_url)
+    except EndpointError as error:
+        print(f"Endpoint check failed: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -93,11 +93,13 @@ an import-verified Python package under `/opt/aggregare/apmatia` and
 `/opt/aggregare/venvs/apmatia`; its API service and starter-agent bootstrap
 are not implemented by this installation path yet. OpenIPE is installed from
 its pinned Python package revision as part of the default system. Open WebUI
-uses Ysparr, but configuring the external llama.cpp URL remains a manual
-inventory step until endpoint onboarding is implemented. HabitSync receives a
+uses Ysparr, which the installer connects to an external llama.cpp endpoint
+during setup. Aggregare does not install llama.cpp or download model weights.
+HabitSync receives a
 generated local login; read it with `sudo cat /etc/aggregare/habitsync-credentials`
 and change it after the first sign-in. Back up this credentials file and
-`/etc/aggregare/secrets/habitsync-jwt` with the applications' data.
+`/etc/aggregare/secrets/habitsync-jwt` with the applications' data. If you use
+an upstream API key, back up `/etc/aggregare/ysparr-upstream.json` as well.
 
 The same additive default bundle can be applied or reapplied through Ansible.
 The bootstrap creates a localhost inventory; use it with:
@@ -111,8 +113,40 @@ For unattended runs, provide Ansible privilege credentials through your
 inventory's protected secret source and run the same command with `--become`
 without `--ask-become-pass`.
 
-Set `ysparr_upstream_base_url` in inventory variables to the reachable
-OpenAI-compatible upstream before applying. Use the same playbook to upgrade:
+The installer prompts for the llama.cpp base URL and checks `GET /v1/models`
+from the Aggregare host before installing the bundle. Enter the server root
+(`http://HOST:PORT`) or a URL ending in `/v1`; Ysparr stores a normalized root
+URL and adds `/v1` to API requests. The selected URL is saved in
+`/etc/aggregare/ysparr-upstream.json` with mode `0640`, owned by root and the
+Ysparr service group. Reapplying the playbook without an endpoint override
+reuses that saved value. The systemd environment file is also protected and
+is the runtime source for Ysparr.
+
+To supply the endpoint without entering it at the installer prompt, use
+`./install.sh --llama-cpp-url http://HOST:PORT`; host-time, identity, and LAN
+prompts still require a terminal. For direct or unattended
+Ansible use, put `ysparr_upstream_base_url` in inventory variables and run
+`ansible-playbook -i INVENTORY playbooks/default.yml --become`; the role
+checks `/v1/models`, configures Ysparr, and persists the endpoint. To change the
+endpoint without reinstalling the stack, reapply
+`playbooks/ysparr.yml --become -e ysparr_upstream_base_url=https://HOST:PORT`.
+
+If the upstream requires an API key, set `ysparr_upstream_api_key` in the
+encrypted `ansible/group_vars/aggregare/vault.yml` (or the matching protected
+inventory secret source). The installer detects an encrypted local
+`vault.yml` and prompts for its Vault password. Ansible suppresses task output
+for secret-bearing operations; do not place keys in URLs, shell history,
+unprotected inventory, or committed files. To clear a saved key, set
+`ysparr_upstream_api_key_reset: true` for one reapply.
+
+The connectivity check distinguishes DNS failures, refused or timed-out
+connections, authentication failures, and a missing `/v1/models` route. A
+loopback address is interpreted from the Aggregare host's network namespace:
+if llama.cpp runs in a container, publish its port and use the host's reachable
+address rather than the container's `127.0.0.1`. The endpoint remains external;
+the installer neither downloads models nor starts a local inference server.
+
+Use the same playbook to upgrade:
 review the pinned images and revisions in the application catalog and
 `catalog/v1/presets/default.json`, update those pins deliberately, then apply
 again. Reapply is idempotent; removing an application preserves its data
