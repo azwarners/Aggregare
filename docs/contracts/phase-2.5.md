@@ -15,19 +15,23 @@ provider is currently installed or provisioned by Aggregare. Apps without
 federation need a documented, secure bootstrap path. Do not describe the app
 set as SSO-enabled unless each app supports the configured flow.
 
-The installer records the optional provider choice as schema version 1 in
+The durable provider choice is a version 1 JSON document at
 `/etc/aggregare/identity.json`, with `identity_provider` set to `kanidm`,
-`external_oidc`, or `none`. Pass `--identity-provider external_oidc` (or
-either other value) to `./install.sh` to set the choice directly; when the
-option is omitted, an existing value is reused, or a first interactive run
-prompts for a choice. For a noninteractive configuration-only Ansible run,
-set `aggregare_identity_provider` in the protected inventory and directly
-invoke the validation playbook. Direct Ansible users set
-`aggregare_identity_provider` in their protected environment inventory and
-can validate it with `ansible-playbook -i INVENTORY
-playbooks/phase25-identity-config.yml`. Missing and unsupported values fail
-with an assertion. This versioned selection does not install a provider;
-external OIDC configuration and provider lifecycle remain administrator-owned.
+`external_oidc`, or `none`. Both `install.sh` and direct Ansible use this same
+file. The installer still requires a TTY for other host setup prompts;
+`--identity-provider external_oidc` (or either other value) makes only the
+provider selection noninteractive. A first installer run prompts for a choice
+if the option is omitted; later runs reuse the saved choice. A conflicting
+choice fails visibly; pass an explicit update option to the Ansible playbook
+(`-e aggregare_identity_provider_update=true`) or the installer's provider
+option to intentionally change it.
+
+For noninteractive identity configuration alone, run
+`ansible-playbook -i INVENTORY playbooks/phase25-identity-config.yml --become
+-e aggregare_identity_provider=external_oidc`. On later runs, omit the
+provider variable to reuse the saved choice. Missing and unsupported values
+fail visibly. This selection does not install a provider; external OIDC
+configuration and provider lifecycle remain administrator-owned.
 
 ## Identity DNS and TLS boundary
 

@@ -10,12 +10,14 @@ INVENTORY_FILE="$ANSIBLE_DIR/inventory.ini"
 VERSION_FILE="$PROJECT_ROOT/VERSION"
 IDENTITY_CONFIG_FILE="/etc/aggregare/identity.json"
 IDENTITY_PROVIDER=""
+IDENTITY_PROVIDER_UPDATE=false
 
 while (($#)); do
   case "$1" in
     --identity-provider)
       (($# >= 2)) || { printf 'Installer stopped: --identity-provider needs kanidm, external_oidc, or none.\n' >&2; exit 2; }
       IDENTITY_PROVIDER="$2"
+      IDENTITY_PROVIDER_UPDATE=true
       shift 2
       ;;
     --help|-h)
@@ -70,11 +72,6 @@ select_identity_provider() {
     esac
   fi
   case "$IDENTITY_PROVIDER" in kanidm|external_oidc|none) ;; *) fail "invalid identity provider '$IDENTITY_PROVIDER'; choose kanidm, external_oidc, or none." ;; esac
-  local config_tmp
-  config_tmp="$(mktemp)"
-  python3 "$PROJECT_ROOT/tools/aggregare-identity-config" write "$IDENTITY_PROVIDER" "$config_tmp" || { rm -f "$config_tmp"; fail "could not prepare identity configuration."; }
-  sudo install -D -m 0644 "$config_tmp" "$IDENTITY_CONFIG_FILE" || { rm -f "$config_tmp"; fail "could not save identity configuration to $IDENTITY_CONFIG_FILE."; }
-  rm -f "$config_tmp"
 }
 
 confirm_host_time() {
@@ -241,7 +238,7 @@ PY
 
 cd "$ANSIBLE_DIR"
 sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/phase25-identity-config.yml \
-  --extra-vars "aggregare_identity_provider=$IDENTITY_PROVIDER"
+  --extra-vars "{\"aggregare_identity_provider\":\"$IDENTITY_PROVIDER\",\"aggregare_identity_provider_update\":$IDENTITY_PROVIDER_UPDATE}"
 sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/memos.yml \
   --extra-vars "$MEMOS_EXTRA_VARS"
 sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/welcome.yml \

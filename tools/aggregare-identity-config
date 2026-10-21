@@ -27,14 +27,7 @@ def main(argv):
             print(f"aggregare-identity-config: {exc}", file=sys.stderr)
             return 2
         return 0
-    if len(argv) == 4 and argv[1] == "write":
-        provider = argv[2]
-        if provider not in PROVIDERS:
-            print(f"aggregare-identity-config: invalid provider '{provider}'", file=sys.stderr)
-            return 2
-        Path(argv[3]).write_text(json.dumps({"schema_version": 1, "identity_provider": provider}, indent=2) + "\n")
-        return 0
-    print("Usage: aggregare-identity-config get-provider FILE | write PROVIDER FILE", file=sys.stderr)
+    print("Usage: aggregare-identity-config get-provider FILE", file=sys.stderr)
     return 2
 
 

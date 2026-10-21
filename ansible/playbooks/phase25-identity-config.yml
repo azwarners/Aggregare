@@ -1,15 +1,81 @@
 ---
-- name: Validate the selected optional identity provider
+- name: Validate and persist the optional identity provider selection
   hosts: aggregare
   gather_facts: false
+  vars:
+    aggregare_identity_config_file: /etc/aggregare/identity.json
   tasks:
-    - name: Require a supported identity provider selection
+    - name: Inspect the persistent configuration directory
+      ansible.builtin.stat:
+        path: "{{ aggregare_identity_config_file | dirname }}"
+      register: aggregare_identity_config_directory_stat
+
+    - name: Create the persistent configuration directory when absent
+      ansible.builtin.file:
+        path: "{{ aggregare_identity_config_file | dirname }}"
+        state: directory
+        mode: "0755"
+      when: not aggregare_identity_config_directory_stat.stat.exists
+
+    - name: Inspect the persistent identity configuration
+      ansible.builtin.stat:
+        path: "{{ aggregare_identity_config_file }}"
+      register: aggregare_identity_config_stat
+
+    - name: Read the persistent identity configuration
+      ansible.builtin.slurp:
+        src: "{{ aggregare_identity_config_file }}"
+      register: aggregare_identity_config_slurp
+      when: aggregare_identity_config_stat.stat.exists
+
+    - name: Parse the persistent identity configuration
+      ansible.builtin.set_fact:
+        aggregare_identity_saved_config: "{{ aggregare_identity_config_slurp.content | b64decode | from_json }}"
+      when: aggregare_identity_config_stat.stat.exists
+
+    - name: Validate the persistent identity configuration
+      ansible.builtin.assert:
+        that:
+          - aggregare_identity_saved_config is mapping
+          - aggregare_identity_saved_config.schema_version | default(0) == 1
+          - aggregare_identity_saved_config.identity_provider | default('') in ['kanidm', 'external_oidc', 'none']
+          - aggregare_identity_saved_config.keys() | list | sort == ['identity_provider', 'schema_version']
+        fail_msg: "{{ aggregare_identity_config_file }} must be version 1 with identity_provider kanidm, external_oidc, or none."
+      when: aggregare_identity_config_stat.stat.exists
+
+    - name: Require a provider selection on first configuration
       ansible.builtin.assert:
         that:
           - aggregare_identity_provider is defined
           - aggregare_identity_provider in ['kanidm', 'external_oidc', 'none']
-        fail_msg: Set aggregare_identity_provider to kanidm, external_oidc, or none in the selected inventory.
+        fail_msg: Set aggregare_identity_provider to kanidm, external_oidc, or none; no persistent identity selection exists yet.
+      when: not aggregare_identity_config_stat.stat.exists
 
-    - name: Confirm identity selection without installing a provider
+    - name: Validate a requested provider selection
+      ansible.builtin.assert:
+        that:
+          - aggregare_identity_provider in ['kanidm', 'external_oidc', 'none']
+        fail_msg: aggregare_identity_provider must be kanidm, external_oidc, or none.
+      when: aggregare_identity_provider is defined
+
+    - name: Reject a requested selection that conflicts with persistent configuration
+      ansible.builtin.assert:
+        that:
+          - aggregare_identity_provider == aggregare_identity_saved_config.identity_provider or aggregare_identity_provider_update | default(false) | bool
+        fail_msg: "Requested identity provider conflicts with {{ aggregare_identity_config_file }}. Set aggregare_identity_provider_update=true to intentionally replace the saved choice."
+      when: aggregare_identity_config_stat.stat.exists and aggregare_identity_provider is defined
+
+    - name: Choose the requested or saved provider
+      ansible.builtin.set_fact:
+        aggregare_identity_provider_effective: "{{ aggregare_identity_provider if aggregare_identity_provider is defined else aggregare_identity_saved_config.identity_provider }}"
+
+    - name: Persist a new or explicitly updated identity selection
+      ansible.builtin.copy:
+        dest: "{{ aggregare_identity_config_file }}"
+        content: "{{ {'schema_version': 1, 'identity_provider': aggregare_identity_provider_effective} | to_nice_json }}\n"
+        mode: "0644"
+      when: not aggregare_identity_config_stat.stat.exists or (aggregare_identity_provider is defined and aggregare_identity_provider != (aggregare_identity_saved_config.identity_provider | default('')))
+
+    - name: Report the effective identity selection
       ansible.builtin.debug:
-        msg: "Identity provider selection is {{ aggregare_identity_provider }}; provider installation is not part of this configuration step."
+        msg: "Identity provider selection is {{ aggregare_identity_provider_effective }}; provider installation is not part of this configuration step."
