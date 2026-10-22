@@ -17,6 +17,61 @@
     port_check_service: apmatia-core.service
   when: apmatia_state == 'present'
 
+- name: Resolve the upstream settings for Apmatia's standalone playbook run
+  when: apmatia_state == 'present'
+  block:
+    - name: Check for saved Ysparr upstream settings
+      ansible.builtin.stat:
+        path: "{{ apmatia_upstream_config_path }}"
+      register: apmatia_upstream_config_file
+
+    - name: Read saved Ysparr upstream settings
+      ansible.builtin.include_vars:
+        file: "{{ apmatia_upstream_config_path }}"
+        name: apmatia_saved_upstream_config
+      when: apmatia_upstream_config_file.stat.exists
+      no_log: true
+
+    - name: Select the configured or saved upstream settings for Apmatia
+      ansible.builtin.set_fact:
+        apmatia_upstream_base_url_selected: >-
+          {{ (ysparr_upstream_base_url | default('', true) | trim)
+             or (apmatia_upstream_base_url | default('', true) | trim)
+             or (apmatia_saved_upstream_config.ysparr_upstream_base_url | default('http://127.0.0.1:4000')) }}
+        apmatia_upstream_api_key_effective: >-
+          {{ '' if ysparr_upstream_api_key_reset | default(false) | bool else
+             ((ysparr_upstream_api_key | default('', true) | trim)
+             or (apmatia_upstream_api_key | default('', true) | trim)
+             or (apmatia_saved_upstream_config.ysparr_upstream_api_key | default(''))) }}
+      no_log: true
+
+    - name: Normalize the upstream URL for Apmatia
+      ansible.builtin.set_fact:
+        apmatia_upstream_base_url: >-
+          {{ apmatia_upstream_base_url_selected if '://' in apmatia_upstream_base_url_selected
+             else 'http://' ~ apmatia_upstream_base_url_selected }}
+        apmatia_upstream_api_key: "{{ apmatia_upstream_api_key_effective }}"
+      no_log: true
+
+    - name: Validate the upstream URL selected for Apmatia
+      ansible.builtin.assert:
+        that:
+          - apmatia_upstream_base_url | urlsplit('scheme') in ['http', 'https']
+          - apmatia_upstream_base_url | urlsplit('hostname') | length > 0
+          - apmatia_upstream_base_url | urlsplit('path') in ['', '/', '/v1', '/v1/']
+          - apmatia_upstream_base_url | urlsplit('username') | default('', true) | length == 0
+          - apmatia_upstream_base_url | urlsplit('password') | default('', true) | length == 0
+          - apmatia_upstream_base_url | urlsplit('query') | default('', true) | length == 0
+          - apmatia_upstream_base_url | urlsplit('fragment') | default('', true) | length == 0
+        fail_msg: >-
+          Set ysparr_upstream_base_url to an http:// or https:// OpenAI-compatible
+          server root URL, optionally ending in /v1.
+
+    - name: Show the model-list endpoint Apmatia will query
+      ansible.builtin.debug:
+        msg: >-
+          Apmatia will query {{ apmatia_upstream_base_url | regex_replace('/v1/?$', '') | regex_replace('/+$', '') }}/v1/models.
+
 - name: Remove Apmatia service and application
   when: apmatia_state == 'absent'
   block:

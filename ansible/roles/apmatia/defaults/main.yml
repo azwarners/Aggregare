@@ -11,6 +11,7 @@ apmatia_config_dir: /var/lib/apmatia/config
 apmatia_credentials_path: /etc/aggregare/apmatia-credentials.json
 apmatia_bootstrap_state_path: /etc/aggregare/apmatia-bootstrap-state.json
 apmatia_bootstrap_username: aggregare-owner
-apmatia_upstream_base_url: "{{ ysparr_upstream_base_url_effective | default('http://127.0.0.1:4000') }}"
-apmatia_upstream_api_key: "{{ ysparr_upstream_api_key_effective | default('') }}"
+apmatia_upstream_base_url: ''
+apmatia_upstream_api_key: ''
+apmatia_upstream_config_path: /etc/aggregare/ysparr-upstream.json
 apmatia_public_base_url: "http://{{ apmatia_host }}:{{ apmatia_port }}"
