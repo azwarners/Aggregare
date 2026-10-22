@@ -148,6 +148,9 @@
         validate_certs: true
       register: ysparr_upstream_models_probe
       failed_when: false
+      retries: 12
+      delay: 20
+      until: ysparr_upstream_models_probe.status | default(0) | int in [200, 401, 403, 404]
       no_log: true
 
     - name: Require a reachable OpenAI-compatible models endpoint

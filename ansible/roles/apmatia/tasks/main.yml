@@ -249,6 +249,9 @@
         return_content: true
         timeout: 8
       register: apmatia_upstream_models
+      retries: 12
+      delay: 20
+      until: apmatia_upstream_models.status | default(0) | int == 200
       when: apmatia_session_cookie is defined
       no_log: true
 

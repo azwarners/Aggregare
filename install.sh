@@ -96,12 +96,13 @@ PY
 }
 
 application_status_is_complete() {
-  sudo python3 - "$1" <<'PY'
+  sudo python3 - "$1" "$2" <<'PY'
 import json
 import os
+import subprocess
 import sys
 
-application_id = sys.argv[1]
+application_id, expected_version = sys.argv[1:]
 path = f"/var/lib/aggregare/status/{application_id}.json"
 try:
     with open(path, encoding="utf-8") as status_file:
@@ -110,8 +111,13 @@ except (OSError, json.JSONDecodeError):
     raise SystemExit(1)
 if (
     status.get("application_id") == application_id
-    and status.get("state") == "running"
+    and status.get("version") == expected_version
+    and status.get("state") in {"running", "installed"}
     and status.get("verification", {}).get("status") == "passed"
+    and subprocess.run(
+        ["systemctl", "is-active", "--quiet", status.get("deployment", {}).get("service", f"{application_id}.service")],
+        check=False,
+    ).returncode == 0
 ):
     raise SystemExit(0)
 raise SystemExit(1)
@@ -509,7 +515,57 @@ PY
   for APPLICATION_PLAYBOOK in "${DEFAULT_APPLICATION_PLAYBOOKS[@]}"; do
     [[ -f "playbooks/$APPLICATION_PLAYBOOK" ]] || fail "default.yml imports a missing playbook: $APPLICATION_PLAYBOOK."
     APPLICATION_ID="${APPLICATION_PLAYBOOK%.yml}"
-    APPLICATION_SIGNATURE="$(printf '%s\n%s' "$DEFAULT_PLAYBOOK_SIGNATURE" "$APPLICATION_PLAYBOOK" | sha256sum | awk '{print $1}')"
+    case "$APPLICATION_ID" in
+      ysparr) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "ysparr_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/ysparr/defaults/main.yml")" ;;
+      apmatia) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "apmatia_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/apmatia/defaults/main.yml")" ;;
+      openipe) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "python_app_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "playbooks/$APPLICATION_PLAYBOOK")" ;;
+      *) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "application_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "playbooks/$APPLICATION_PLAYBOOK")" ;;
+    esac
+    [[ -n "$APPLICATION_EXPECTED_VERSION" ]] || fail "could not determine the expected version for $APPLICATION_ID."
+    APPLICATION_SIGNATURE="v2:$(python3 - "$ANSIBLE_DIR" "$APPLICATION_PLAYBOOK" "$AGGREGARE_VERSION" "$BOOTSTRAP_EXTRA_VARS" <<'PY'
+import hashlib
+import os
+import re
+import sys
+
+root, playbook, version, extra_vars = sys.argv[1:]
+playbook_path = os.path.join(root, "playbooks", playbook)
+roles = set()
+pending = [playbook_path]
+files = {playbook_path}
+while pending:
+    path = pending.pop()
+    try:
+        source = open(path, encoding="utf-8").read()
+    except OSError:
+        continue
+    for match in re.finditer(r"(?:role:\s*|name:\s*|^\s*-\s+)([A-Za-z0-9_-]+)\s*$", source, re.M):
+        role = match.group(1)
+        if role in {"aggregare", "localhost"} or role in roles:
+            continue
+        role_dir = os.path.join(root, "roles", role)
+        if not os.path.isdir(role_dir):
+            continue
+        roles.add(role)
+        for directory, _, names in os.walk(role_dir):
+            for name in names:
+                role_file = os.path.join(directory, name)
+                files.add(role_file)
+                if name.endswith((".yml", ".yaml")) and ("tasks" in directory or "handlers" in directory):
+                    pending.append(role_file)
+for directory in (os.path.join(root, "group_vars"),):
+    for base, _, names in os.walk(directory):
+        files.update(os.path.join(base, name) for name in names)
+digest = hashlib.sha256()
+digest.update(version.encode())
+digest.update(extra_vars.encode())
+for path in sorted(files):
+    digest.update(os.path.relpath(path, root).encode())
+    with open(path, "rb") as source:
+        digest.update(source.read())
+print(digest.hexdigest())
+PY
+)"
     APPLICATION_COMPLETE="$(install_state_get "default_application_${APPLICATION_ID}_complete")" || fail "could not read installer progress from $INSTALL_STATE_FILE."
     APPLICATION_APPLIED_SIGNATURE="$(install_state_get "default_application_${APPLICATION_ID}_signature")" || fail "could not read installer progress from $INSTALL_STATE_FILE."
     APPLICATION_TASK_LISTING="$(sudo "$ANSIBLE_PLAYBOOK" -i inventory.ini "playbooks/$APPLICATION_PLAYBOOK" --list-tasks --extra-vars "$BOOTSTRAP_EXTRA_VARS" 2>&1)" || fail "could not calculate task progress for $APPLICATION_PLAYBOOK."
@@ -518,7 +574,7 @@ PY
 
     if [[ "$APPLICATION_COMPLETE" == true && "$APPLICATION_APPLIED_SIGNATURE" == "$APPLICATION_SIGNATURE" ]]; then
       printf '%s was already completed; skipping.\n' "$APPLICATION_ID"
-    elif [[ "$DEFAULT_PLAYBOOK_COMPLETE" != true && -z "$APPLICATION_APPLIED_SIGNATURE" ]] && application_status_is_complete "$APPLICATION_ID"; then
+    elif [[ "$APPLICATION_APPLIED_SIGNATURE" != v2:* ]] && application_status_is_complete "$APPLICATION_ID" "$APPLICATION_EXPECTED_VERSION"; then
       # Upgrade legacy bundle-level progress using the status record written
       # only after this application's successful health check.
       install_state_set "default_application_${APPLICATION_ID}_complete" true || fail "$APPLICATION_ID completed previously, but progress could not be saved."
