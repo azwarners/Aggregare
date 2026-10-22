@@ -47,7 +47,7 @@
               }
             }
           }
-        } | to_json }}
+        } | to_json(separators=[',', ':']) }}
     application_health_path: /actuator/health
   pre_tasks:
     - name: Validate HabitSync base URL and recovery account

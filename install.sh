@@ -532,13 +532,13 @@ PY
       *) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "application_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "playbooks/$APPLICATION_PLAYBOOK")" ;;
     esac
     [[ -n "$APPLICATION_EXPECTED_VERSION" ]] || fail "could not determine the expected version for $APPLICATION_ID."
-    APPLICATION_SIGNATURE="v2:$(python3 - "$ANSIBLE_DIR" "$APPLICATION_PLAYBOOK" "$AGGREGARE_VERSION" "$BOOTSTRAP_EXTRA_VARS" <<'PY'
+    APPLICATION_SIGNATURE="v2:$(python3 - "$ANSIBLE_DIR" "$APPLICATION_PLAYBOOK" "$AGGREGARE_VERSION" "$BOOTSTRAP_EXTRA_VARS" "$APPLICATION_ID" <<'PY'
 import hashlib
 import os
 import re
 import sys
 
-root, playbook, version, extra_vars = sys.argv[1:]
+root, playbook, version, extra_vars, application_id = sys.argv[1:]
 playbook_path = os.path.join(root, "playbooks", playbook)
 roles = set()
 pending = [playbook_path]
@@ -570,7 +570,10 @@ digest = hashlib.sha256()
 digest.update(version.encode())
 digest.update(extra_vars.encode())
 for path in sorted(files):
-    digest.update(os.path.relpath(path, root).encode())
+    relative_path = os.path.relpath(path, root)
+    if relative_path == "roles/container_app/templates/application.env.j2" and application_id != "habitsync":
+        continue
+    digest.update(relative_path.encode())
     with open(path, "rb") as source:
         digest.update(source.read())
 print(digest.hexdigest())
