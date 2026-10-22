@@ -113,6 +113,7 @@ if (
     status.get("application_id") == application_id
     and status.get("version") == expected_version
     and status.get("state") in {"running", "installed"}
+    and status.get("upstream_onboarding_pending") is not True
     and status.get("verification", {}).get("status") == "passed"
     and subprocess.run(
         ["systemctl", "is-active", "--quiet", status.get("deployment", {}).get("service", f"{application_id}.service")],
@@ -222,6 +223,15 @@ PY
       printf '%s\n' "$probe_output" >&2
       probe_status=0
     done
+  fi
+
+  if [[ -z "$LLAMA_CPP_URL" && -n "$progress_url" ]]; then
+    # This endpoint passed its onboarding probe when first saved. Keep using
+    # that selection on resume even if it is temporarily offline; the app roles
+    # can defer upstream configuration and retry it on the next installer run.
+    LLAMA_CPP_URL="$progress_url"
+    printf 'Reusing the previously validated llama.cpp endpoint: %s\n' "$LLAMA_CPP_URL"
+    return 0
   fi
 
   probe_status=0
@@ -572,7 +582,7 @@ PY
     APPLICATION_TASK_COUNT="$(awk '/^      .*TAGS: / { count++ } END { print count + 0 }' <<<"$APPLICATION_TASK_LISTING")"
     ((APPLICATION_TASK_COUNT > 0)) || fail "could not calculate task progress for $APPLICATION_PLAYBOOK."
 
-    if [[ "$APPLICATION_COMPLETE" == true && "$APPLICATION_APPLIED_SIGNATURE" == "$APPLICATION_SIGNATURE" ]]; then
+    if [[ "$APPLICATION_COMPLETE" == true && "$APPLICATION_APPLIED_SIGNATURE" == "$APPLICATION_SIGNATURE" ]] && application_status_is_complete "$APPLICATION_ID" "$APPLICATION_EXPECTED_VERSION"; then
       printf '%s was already completed; skipping.\n' "$APPLICATION_ID"
     elif [[ "$APPLICATION_APPLIED_SIGNATURE" != v2:* ]] && application_status_is_complete "$APPLICATION_ID" "$APPLICATION_EXPECTED_VERSION"; then
       # Upgrade legacy bundle-level progress using the status record written

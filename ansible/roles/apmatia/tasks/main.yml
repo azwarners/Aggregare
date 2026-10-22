@@ -249,11 +249,28 @@
         return_content: true
         timeout: 8
       register: apmatia_upstream_models
-      retries: 12
+      failed_when: false
+      retries: 3
       delay: 20
       until: apmatia_upstream_models.status | default(0) | int == 200
       when: apmatia_session_cookie is defined
       no_log: true
+
+    - name: Record whether the selected upstream is currently available
+      ansible.builtin.set_fact:
+        apmatia_upstream_available: "{{ apmatia_upstream_models.status | default(0) | int == 200 }}"
+      when: apmatia_session_cookie is defined
+
+    - name: Reject an upstream HTTP error while allowing a temporary network outage
+      ansible.builtin.assert:
+        that:
+          - apmatia_upstream_models.status | default(0) | int in [200, -1]
+        fail_msg: >-
+          The configured upstream returned HTTP {{ apmatia_upstream_models.status }}.
+          Check its credentials and /v1/models endpoint, then rerun the installer.
+      when:
+        - apmatia_session_cookie is defined
+        - apmatia_upstream_models.status | default(0) | int != -1
 
     - name: Validate the selected upstream model list
       ansible.builtin.assert:
@@ -263,7 +280,9 @@
           - apmatia_upstream_models.json.data | length > 0
           - apmatia_upstream_models.json.data[0].id | default('') | string | length > 0
         fail_msg: The configured upstream must return at least one model from /v1/models.
-      when: apmatia_session_cookie is defined
+      when:
+        - apmatia_session_cookie is defined
+        - apmatia_upstream_available | default(false) | bool
 
     - name: Read existing Apmatia model configurations
       ansible.builtin.uri:
@@ -274,7 +293,9 @@
         status_code: 200
         return_content: true
       register: apmatia_model_configs
-      when: apmatia_session_cookie is defined
+      when:
+        - apmatia_session_cookie is defined
+        - apmatia_upstream_available | default(false) | bool
       no_log: true
 
     - name: Add a backing model only when Apmatia has no configured models
@@ -297,6 +318,7 @@
         return_content: true
       when:
         - apmatia_session_cookie is defined
+        - apmatia_upstream_available | default(false) | bool
         - apmatia_model_configs.json | length == 0
       no_log: true
 
@@ -311,6 +333,7 @@
       register: apmatia_agents
       when:
         - apmatia_session_cookie is defined
+        - apmatia_upstream_available | default(false) | bool
         - apmatia_managed_fresh_install | bool
       no_log: true
 
@@ -321,7 +344,9 @@
         status_code: 200
         return_content: true
       register: apmatia_public_agents
-      when: apmatia_session_cookie is defined
+      when:
+        - apmatia_session_cookie is defined
+        - apmatia_upstream_available | default(false) | bool
 
     - name: Verify the published starter agents have model mappings
       ansible.builtin.assert:
@@ -334,6 +359,7 @@
         fail_msg: Apmatia did not expose Mira, Luna, Rowan, Belle, and Ivy as published agents with backing model references.
       when:
         - apmatia_session_cookie is defined
+        - apmatia_upstream_available | default(false) | bool
         - apmatia_managed_fresh_install | bool
 
     - name: Verify Ysparr is reachable after Apmatia publication
@@ -347,7 +373,9 @@
       retries: 12
       delay: 20
       until: apmatia_ysparr_models.status == 200
-      when: apmatia_session_cookie is defined
+      when:
+        - apmatia_session_cookie is defined
+        - apmatia_upstream_available | default(false) | bool
 
     - name: Verify Ysparr exposes model names after agent publication
       ansible.builtin.assert:
@@ -359,7 +387,9 @@
         fail_msg: >-
           Ysparr must expose every currently published Apmatia agent alongside the
           selected upstream model. Check its Apmatia URL and restart Ysparr if needed.
-      when: apmatia_session_cookie is defined
+      when:
+        - apmatia_session_cookie is defined
+        - apmatia_upstream_available | default(false) | bool
 
     - name: Leave existing Apmatia accounts untouched when no saved credentials are available
       ansible.builtin.debug:
@@ -370,6 +400,16 @@
       when:
         - not apmatia_credentials_file.stat.exists
         - apmatia_prior_state.results | selectattr('stat.exists') | list | length > 0
+
+    - name: Explain deferred Apmatia upstream onboarding
+      ansible.builtin.debug:
+        msg: >-
+          Apmatia is healthy, but {{ apmatia_upstream_base_url }} did not provide its model
+          list. Aggregare installed Apmatia and will retry model and agent onboarding the
+          next time the installer runs.
+      when:
+        - apmatia_session_cookie is defined
+        - not (apmatia_upstream_available | default(false) | bool)
 
     - name: Write machine-readable Apmatia status
       ansible.builtin.copy:
@@ -385,5 +425,6 @@
             'version': apmatia_version,
             'deployment': {'backend': 'ansible', 'method': 'native-python', 'service': 'apmatia-core.service'},
             'verification': {'status': 'passed', 'endpoint': 'http://' ~ apmatia_host ~ ':' ~ (apmatia_port | string) ~ '/api/version'},
-            'public_agents': (apmatia_public_agents.json | length) if apmatia_public_agents is not skipped else 0
+            'public_agents': (apmatia_public_agents.json | length) if apmatia_public_agents is not skipped else 0,
+            'upstream_onboarding_pending': apmatia_session_cookie is defined and not (apmatia_upstream_available | default(false) | bool)
           } | to_nice_json }}
