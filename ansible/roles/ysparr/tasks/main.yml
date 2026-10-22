@@ -255,7 +255,7 @@
         status_code: 200
       register: ysparr_health
       retries: 12
-      delay: 5
+      delay: 20
       until: ysparr_health.status == 200
 
     - name: Write machine-readable Ysparr status

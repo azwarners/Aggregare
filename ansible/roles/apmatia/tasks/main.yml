@@ -166,7 +166,7 @@
         status_code: 200
       register: apmatia_health
       retries: 18
-      delay: 5
+      delay: 20
       until: apmatia_health.status == 200
 
     - name: Generate a first-user password on a fresh Apmatia installation
@@ -342,7 +342,7 @@
         timeout: 8
       register: apmatia_ysparr_models
       retries: 12
-      delay: 5
+      delay: 20
       until: apmatia_ysparr_models.status == 200
       when: apmatia_session_cookie is defined
 
