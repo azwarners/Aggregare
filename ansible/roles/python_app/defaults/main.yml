@@ -8,3 +8,5 @@ python_app_module: ''
 python_app_system_packages: []
 python_app_system_site_packages: false
 python_app_python_command: "import {{ python_app_module }}"
+# Tracked build metadata rewritten by pip during editable installs.
+python_app_generated_source_files: []

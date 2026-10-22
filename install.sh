@@ -420,12 +420,34 @@ if [[ -f "$VAULT_VARS_FILE" ]] && grep -q '^\$ANSIBLE_VAULT;' "$VAULT_VARS_FILE"
 fi
 
 cd "$ANSIBLE_DIR"
+ANSIBLE_PLAYBOOK="$(command -v ansible-playbook)"
+
+run_playbook_with_progress() {
+  local playbook="$1" extra_vars="$2" task_listing task_total
+  shift 2
+
+  task_listing="$(sudo "$ANSIBLE_PLAYBOOK" -i inventory.ini "$playbook" --list-tasks --extra-vars "$extra_vars" 2>&1)" || task_listing=""
+  task_total="$(awk '/^      .*TAGS: / { count++ } END { print count + 0 }' <<<"$task_listing")"
+  if ((task_total == 0)); then
+    task_total="?"
+    printf 'Could not calculate the task total for %s; showing the running task number only.\n' "$playbook"
+  else
+    printf 'Starting %s: %s tasks in this playbook.\n' "$playbook" "$task_total"
+  fi
+
+  sudo env \
+    ANSIBLE_CALLBACK_PLUGINS="$ANSIBLE_DIR/callback_plugins" \
+    ANSIBLE_STDOUT_CALLBACK=aggregare_progress \
+    AGGREGARE_TASK_TOTAL="$task_total" \
+    "$ANSIBLE_PLAYBOOK" -i inventory.ini "$playbook" --extra-vars "$extra_vars" "$@"
+}
+
 IDENTITY_CONFIG_COMPLETE="$(install_state_get identity_config_playbook_complete)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
 IDENTITY_CONFIG_SIGNATURE="$(printf '%s\n%s' "$AGGREGARE_VERSION" "$IDENTITY_PROVIDER" | sha256sum | awk '{print $1}')"
 IDENTITY_CONFIG_APPLIED_SIGNATURE="$(install_state_get identity_config_applied_signature)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
 if [[ "$IDENTITY_PROVIDER_UPDATE" == true || "$IDENTITY_CONFIG_COMPLETE" != true || "$IDENTITY_CONFIG_APPLIED_SIGNATURE" != "$IDENTITY_CONFIG_SIGNATURE" ]]; then
-  sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/phase25-identity-config.yml \
-    --extra-vars "{\"aggregare_identity_provider\":\"$IDENTITY_PROVIDER\",\"aggregare_identity_provider_update\":$IDENTITY_PROVIDER_UPDATE}"
+  run_playbook_with_progress playbooks/phase25-identity-config.yml \
+    "{\"aggregare_identity_provider\":\"$IDENTITY_PROVIDER\",\"aggregare_identity_provider_update\":$IDENTITY_PROVIDER_UPDATE}"
   install_state_set identity_config_playbook_complete true || fail "identity setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
   install_state_set identity_config_applied_signature "$IDENTITY_CONFIG_SIGNATURE" || fail "identity setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
 else
@@ -436,8 +458,7 @@ DEFAULT_PLAYBOOK_COMPLETE="$(install_state_get default_playbook_complete)" || fa
 DEFAULT_PLAYBOOK_SIGNATURE="$(printf '%s\n%s' "$AGGREGARE_VERSION" "$BOOTSTRAP_EXTRA_VARS" | sha256sum | awk '{print $1}')"
 DEFAULT_PLAYBOOK_APPLIED_SIGNATURE="$(install_state_get default_playbook_applied_signature)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
 if [[ "$DEFAULT_PLAYBOOK_COMPLETE" != true || "$DEFAULT_PLAYBOOK_APPLIED_SIGNATURE" != "$DEFAULT_PLAYBOOK_SIGNATURE" ]]; then
-  sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/default.yml \
-    --extra-vars "$BOOTSTRAP_EXTRA_VARS" "${ANSIBLE_VAULT_ARGS[@]}"
+  run_playbook_with_progress playbooks/default.yml "$BOOTSTRAP_EXTRA_VARS" "${ANSIBLE_VAULT_ARGS[@]}"
   install_state_set default_playbook_complete true || fail "default application setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
   install_state_set default_playbook_applied_signature "$DEFAULT_PLAYBOOK_SIGNATURE" || fail "default application setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
 else
@@ -448,8 +469,7 @@ WELCOME_PLAYBOOK_COMPLETE="$(install_state_get welcome_playbook_complete)" || fa
 WELCOME_PLAYBOOK_SIGNATURE="$(printf '%s\n%s' "$AGGREGARE_VERSION" "$PROJECT_ROOT/docs/deployment/aggregare-server.md" | sha256sum | awk '{print $1}')"
 WELCOME_PLAYBOOK_APPLIED_SIGNATURE="$(install_state_get welcome_playbook_applied_signature)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
 if [[ "$WELCOME_PLAYBOOK_COMPLETE" != true || "$WELCOME_PLAYBOOK_APPLIED_SIGNATURE" != "$WELCOME_PLAYBOOK_SIGNATURE" ]]; then
-  sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/welcome.yml \
-    --extra-vars "$WELCOME_EXTRA_VARS"
+  run_playbook_with_progress playbooks/welcome.yml "$WELCOME_EXTRA_VARS"
   install_state_set welcome_playbook_complete true || fail "welcome playbook completed, but progress could not be saved to $INSTALL_STATE_FILE."
   install_state_set welcome_playbook_applied_signature "$WELCOME_PLAYBOOK_SIGNATURE" || fail "welcome playbook completed, but progress could not be saved to $INSTALL_STATE_FILE."
 else

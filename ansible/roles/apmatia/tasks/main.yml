@@ -112,6 +112,9 @@
         python_app_source: "{{ apmatia_source }}"
         python_app_ref: "{{ apmatia_source_ref }}"
         python_app_module: apmatia
+        python_app_generated_source_files:
+          - src/apmatia.egg-info/PKG-INFO
+          - src/apmatia.egg-info/SOURCES.txt
 
     - name: Create Apmatia service account
       ansible.builtin.user:
