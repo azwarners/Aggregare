@@ -60,7 +60,9 @@
 
     - name: Install HabitSync certificate and password utilities
       ansible.builtin.apt:
-        name: [apache2-utils, ca-certificates-java, openssl]
+        # ca-certificates-java alone does not create the JKS store when no JVM
+        # is installed. HabitSync mounts that generated store into its JVM.
+        name: [apache2-utils, ca-certificates-java, default-jre-headless, openssl]
         state: present
         update_cache: true
         cache_valid_time: 3600
@@ -78,7 +80,7 @@
           - habitsync_java_trust_store.stat.exists
         fail_msg: >-
           HabitSync needs /etc/ssl/certs/java/cacerts mounted into its Java trust store.
-          Ensure ca-certificates-java installed and generated this file.
+          Ensure ca-certificates-java and a Java runtime are installed so Ubuntu can generate this file.
       when: application_state | default('present') == 'present'
 
     - name: Ensure protected directory for generated HabitSync credentials

@@ -95,6 +95,29 @@ finally:
 PY
 }
 
+application_status_is_complete() {
+  sudo python3 - "$1" <<'PY'
+import json
+import os
+import sys
+
+application_id = sys.argv[1]
+path = f"/var/lib/aggregare/status/{application_id}.json"
+try:
+    with open(path, encoding="utf-8") as status_file:
+        status = json.load(status_file)
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(1)
+if (
+    status.get("application_id") == application_id
+    and status.get("state") == "running"
+    and status.get("verification", {}).get("status") == "passed"
+):
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 case "$IDENTITY_PROVIDER" in
   ""|kanidm|external_oidc|none) ;;
   *) printf 'Installer stopped: invalid identity provider "%s"; choose kanidm, external_oidc, or none.\n' "$IDENTITY_PROVIDER" >&2; exit 2 ;;
@@ -424,10 +447,15 @@ ANSIBLE_PLAYBOOK="$(command -v ansible-playbook)"
 
 run_playbook_with_progress() {
   local playbook="$1" extra_vars="$2" task_listing task_total
+  local task_offset="${TASK_PROGRESS_OFFSET:-0}" task_total_override="${TASK_PROGRESS_TOTAL:-}"
   shift 2
 
-  task_listing="$(sudo "$ANSIBLE_PLAYBOOK" -i inventory.ini "$playbook" --list-tasks --extra-vars "$extra_vars" 2>&1)" || task_listing=""
-  task_total="$(awk '/^      .*TAGS: / { count++ } END { print count + 0 }' <<<"$task_listing")"
+  if [[ -n "$task_total_override" ]]; then
+    task_total="$task_total_override"
+  else
+    task_listing="$(sudo "$ANSIBLE_PLAYBOOK" -i inventory.ini "$playbook" --list-tasks --extra-vars "$extra_vars" 2>&1)" || task_listing=""
+    task_total="$(awk '/^      .*TAGS: / { count++ } END { print count + 0 }' <<<"$task_listing")"
+  fi
   if ((task_total == 0)); then
     task_total="?"
     printf 'Could not calculate the task total for %s; showing the running task number only.\n' "$playbook"
@@ -439,6 +467,7 @@ run_playbook_with_progress() {
     ANSIBLE_CALLBACK_PLUGINS="$ANSIBLE_DIR/callback_plugins" \
     ANSIBLE_STDOUT_CALLBACK=aggregare_progress \
     AGGREGARE_TASK_TOTAL="$task_total" \
+    AGGREGARE_TASK_OFFSET="$task_offset" \
     "$ANSIBLE_PLAYBOOK" -i inventory.ini "$playbook" --extra-vars "$extra_vars" "$@"
 }
 
@@ -455,10 +484,56 @@ else
 fi
 
 DEFAULT_PLAYBOOK_COMPLETE="$(install_state_get default_playbook_complete)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
-DEFAULT_PLAYBOOK_SIGNATURE="$(printf '%s\n%s' "$AGGREGARE_VERSION" "$BOOTSTRAP_EXTRA_VARS" | sha256sum | awk '{print $1}')"
+ANSIBLE_SOURCE_SIGNATURE="$({ find "$ANSIBLE_DIR/playbooks" "$ANSIBLE_DIR/roles" "$ANSIBLE_DIR/callback_plugins" "$ANSIBLE_DIR/group_vars" -type f -print0; printf '%s\0' "$PROJECT_ROOT/install.sh"; } | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
+DEFAULT_PLAYBOOK_SIGNATURE="$(printf '%s\n%s\n%s' "$AGGREGARE_VERSION" "$BOOTSTRAP_EXTRA_VARS" "$ANSIBLE_SOURCE_SIGNATURE" | sha256sum | awk '{print $1}')"
 DEFAULT_PLAYBOOK_APPLIED_SIGNATURE="$(install_state_get default_playbook_applied_signature)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
 if [[ "$DEFAULT_PLAYBOOK_COMPLETE" != true || "$DEFAULT_PLAYBOOK_APPLIED_SIGNATURE" != "$DEFAULT_PLAYBOOK_SIGNATURE" ]]; then
-  run_playbook_with_progress playbooks/default.yml "$BOOTSTRAP_EXTRA_VARS" "${ANSIBLE_VAULT_ARGS[@]}"
+  mapfile -t DEFAULT_APPLICATION_PLAYBOOKS < <(python3 - "$ANSIBLE_DIR/playbooks/default.yml" <<'PY'
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as playbook:
+    for line in playbook:
+        match = re.fullmatch(r"\s*- import_playbook:\s*([A-Za-z0-9_.-]+\.yml)\s*", line)
+        if match:
+            print(match.group(1))
+PY
+  )
+  ((${#DEFAULT_APPLICATION_PLAYBOOKS[@]} > 0)) || fail "could not read application playbooks from playbooks/default.yml."
+
+  DEFAULT_TASK_LISTING="$(sudo "$ANSIBLE_PLAYBOOK" -i inventory.ini playbooks/default.yml --list-tasks --extra-vars "$BOOTSTRAP_EXTRA_VARS" 2>&1)" || fail "could not calculate the default application task total."
+  DEFAULT_TASK_TOTAL="$(awk '/^      .*TAGS: / { count++ } END { print count + 0 }' <<<"$DEFAULT_TASK_LISTING")"
+  ((DEFAULT_TASK_TOTAL > 0)) || fail "could not calculate the default application task total."
+  DEFAULT_TASK_OFFSET=0
+
+  for APPLICATION_PLAYBOOK in "${DEFAULT_APPLICATION_PLAYBOOKS[@]}"; do
+    [[ -f "playbooks/$APPLICATION_PLAYBOOK" ]] || fail "default.yml imports a missing playbook: $APPLICATION_PLAYBOOK."
+    APPLICATION_ID="${APPLICATION_PLAYBOOK%.yml}"
+    APPLICATION_SIGNATURE="$(printf '%s\n%s' "$DEFAULT_PLAYBOOK_SIGNATURE" "$APPLICATION_PLAYBOOK" | sha256sum | awk '{print $1}')"
+    APPLICATION_COMPLETE="$(install_state_get "default_application_${APPLICATION_ID}_complete")" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+    APPLICATION_APPLIED_SIGNATURE="$(install_state_get "default_application_${APPLICATION_ID}_signature")" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+    APPLICATION_TASK_LISTING="$(sudo "$ANSIBLE_PLAYBOOK" -i inventory.ini "playbooks/$APPLICATION_PLAYBOOK" --list-tasks --extra-vars "$BOOTSTRAP_EXTRA_VARS" 2>&1)" || fail "could not calculate task progress for $APPLICATION_PLAYBOOK."
+    APPLICATION_TASK_COUNT="$(awk '/^      .*TAGS: / { count++ } END { print count + 0 }' <<<"$APPLICATION_TASK_LISTING")"
+    ((APPLICATION_TASK_COUNT > 0)) || fail "could not calculate task progress for $APPLICATION_PLAYBOOK."
+
+    if [[ "$APPLICATION_COMPLETE" == true && "$APPLICATION_APPLIED_SIGNATURE" == "$APPLICATION_SIGNATURE" ]]; then
+      printf '%s was already completed; skipping.\n' "$APPLICATION_ID"
+    elif [[ "$DEFAULT_PLAYBOOK_COMPLETE" != true && -z "$APPLICATION_APPLIED_SIGNATURE" ]] && application_status_is_complete "$APPLICATION_ID"; then
+      # Upgrade legacy bundle-level progress using the status record written
+      # only after this application's successful health check.
+      install_state_set "default_application_${APPLICATION_ID}_complete" true || fail "$APPLICATION_ID completed previously, but progress could not be saved."
+      install_state_set "default_application_${APPLICATION_ID}_signature" "$APPLICATION_SIGNATURE" || fail "$APPLICATION_ID completed previously, but progress could not be saved."
+      printf '%s already has a passing installed status; recording it as complete and skipping.\n' "$APPLICATION_ID"
+    else
+      TASK_PROGRESS_OFFSET="$DEFAULT_TASK_OFFSET"
+      TASK_PROGRESS_TOTAL="$DEFAULT_TASK_TOTAL"
+      run_playbook_with_progress "playbooks/$APPLICATION_PLAYBOOK" "$BOOTSTRAP_EXTRA_VARS" "${ANSIBLE_VAULT_ARGS[@]}"
+      install_state_set "default_application_${APPLICATION_ID}_complete" true || fail "$APPLICATION_ID setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+      install_state_set "default_application_${APPLICATION_ID}_signature" "$APPLICATION_SIGNATURE" || fail "$APPLICATION_ID setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+    fi
+    DEFAULT_TASK_OFFSET=$((DEFAULT_TASK_OFFSET + APPLICATION_TASK_COUNT))
+  done
+  unset TASK_PROGRESS_OFFSET TASK_PROGRESS_TOTAL
   install_state_set default_playbook_complete true || fail "default application setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
   install_state_set default_playbook_applied_signature "$DEFAULT_PLAYBOOK_SIGNATURE" || fail "default application setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
 else

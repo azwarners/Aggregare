@@ -32,6 +32,10 @@ class CallbackModule(DefaultCallbackModule):
         super().__init__()
         self._aggregare_task_index = 0
         try:
+            self._aggregare_task_offset = max(0, int(os.environ.get("AGGREGARE_TASK_OFFSET", "0")))
+        except ValueError:
+            self._aggregare_task_offset = 0
+        try:
             self._aggregare_task_total = max(0, int(os.environ.get("AGGREGARE_TASK_TOTAL", "0")))
         except ValueError:
             self._aggregare_task_total = 0
@@ -40,7 +44,8 @@ class CallbackModule(DefaultCallbackModule):
         self._aggregare_task_index += 1
         original_name = task.name
         total = str(self._aggregare_task_total) if self._aggregare_task_total else "?"
-        task.name = f"{self._aggregare_task_index}/{total} {original_name or task.get_name().strip()}"
+        ordinal = self._aggregare_task_offset + self._aggregare_task_index
+        task.name = f"{ordinal}/{total} {original_name or task.get_name().strip()}"
         try:
             super().v2_playbook_on_task_start(task, is_conditional)
         finally:
