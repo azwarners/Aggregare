@@ -58,12 +58,27 @@
         fail_msg: HabitSync needs a valid base URL and local recovery account name.
       when: application_state | default('present') == 'present'
 
-    - name: Install HabitSync secret generation and password utilities
+    - name: Install HabitSync certificate and password utilities
       ansible.builtin.apt:
-        name: [apache2-utils, openssl]
+        name: [apache2-utils, ca-certificates-java, openssl]
         state: present
         update_cache: true
         cache_valid_time: 3600
+      when: application_state | default('present') == 'present'
+
+    - name: Check for the Java trust store required by HabitSync
+      ansible.builtin.stat:
+        path: /etc/ssl/certs/java/cacerts
+      register: habitsync_java_trust_store
+      when: application_state | default('present') == 'present'
+
+    - name: Require the Java trust store required by HabitSync
+      ansible.builtin.assert:
+        that:
+          - habitsync_java_trust_store.stat.exists
+        fail_msg: >-
+          HabitSync needs /etc/ssl/certs/java/cacerts mounted into its Java trust store.
+          Ensure ca-certificates-java installed and generated this file.
       when: application_state | default('present') == 'present'
 
     - name: Ensure protected directory for generated HabitSync credentials

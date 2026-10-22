@@ -8,9 +8,12 @@ ANSIBLE_DIR="$PROJECT_ROOT/ansible"
 INVENTORY_FILE="$ANSIBLE_DIR/inventory.ini"
 VERSION_FILE="$PROJECT_ROOT/VERSION"
 IDENTITY_CONFIG_FILE="/etc/aggregare/identity.json"
+INSTALL_STATE_FILE="/var/lib/aggregare/installer-state.json"
 IDENTITY_PROVIDER=""
 IDENTITY_PROVIDER_UPDATE=false
 LLAMA_CPP_URL=""
+LAN_ACCESS=""
+LEGACY_RESUME=false
 
 while (($#)); do
   case "$1" in
@@ -25,8 +28,12 @@ while (($#)); do
       LLAMA_CPP_URL="$2"
       shift 2
       ;;
+    --reset-progress)
+      RESET_INSTALL_PROGRESS=true
+      shift
+      ;;
     --help|-h)
-      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--llama-cpp-url URL]\n'
+      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--llama-cpp-url URL] [--reset-progress]\n'
       exit 0
       ;;
     *) printf 'Installer stopped: unknown option: %s\n' "$1" >&2; exit 2 ;;
@@ -36,6 +43,56 @@ done
 fail() {
   printf 'Installer stopped: %s\n' "$*" >&2
   exit 1
+}
+
+install_state_get() {
+  sudo python3 - "$INSTALL_STATE_FILE" "$1" <<'PY'
+import json
+import os
+import sys
+
+path, key = sys.argv[1:]
+if not os.path.exists(path):
+    raise SystemExit(0)
+try:
+    with open(path, encoding="utf-8") as state_file:
+        state = json.load(state_file)
+except (OSError, json.JSONDecodeError) as error:
+    print(f"Installer progress file {path} is invalid: {error}", file=sys.stderr)
+    raise SystemExit(1)
+value = state.get(key, "")
+if isinstance(value, bool):
+    print("true" if value else "false")
+elif value is not None:
+    print(value)
+PY
+}
+
+install_state_set() {
+  sudo python3 - "$INSTALL_STATE_FILE" "$1" "$2" <<'PY'
+import json
+import os
+import sys
+import tempfile
+
+path, key, value = sys.argv[1:]
+os.makedirs(os.path.dirname(path), mode=0o755, exist_ok=True)
+state = {}
+if os.path.exists(path):
+    with open(path, encoding="utf-8") as state_file:
+        state = json.load(state_file)
+state[key] = value
+fd, temporary_path = tempfile.mkstemp(prefix=".installer-state-", dir=os.path.dirname(path), text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as state_file:
+        json.dump(state, state_file, indent=2, sort_keys=True)
+        state_file.write("\n")
+    os.chmod(temporary_path, 0o644)
+    os.replace(temporary_path, path)
+finally:
+    if os.path.exists(temporary_path):
+        os.unlink(temporary_path)
+PY
 }
 
 case "$IDENTITY_PROVIDER" in
@@ -56,9 +113,14 @@ ask_yes_no() {
 }
 
 select_identity_provider() {
-  local saved_provider=""
+  local saved_provider="" progress_provider=""
+  progress_provider="$(install_state_get identity_provider)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
   if [[ -r "$IDENTITY_CONFIG_FILE" ]]; then
     saved_provider="$(python3 "$PROJECT_ROOT/tools/aggregare-identity-config" get-provider "$IDENTITY_CONFIG_FILE")" || fail "saved identity configuration is invalid; review $IDENTITY_CONFIG_FILE."
+  fi
+  if [[ -z "$IDENTITY_PROVIDER" && -n "$progress_provider" ]]; then
+    IDENTITY_PROVIDER="$progress_provider"
+    printf 'Resuming with saved identity provider selection: %s\n' "$IDENTITY_PROVIDER"
   fi
   if [[ -z "$IDENTITY_PROVIDER" && -n "$saved_provider" ]]; then
     IDENTITY_PROVIDER="$saved_provider"
@@ -77,11 +139,14 @@ select_identity_provider() {
     esac
   fi
   case "$IDENTITY_PROVIDER" in kanidm|external_oidc|none) ;; *) fail "invalid identity provider '$IDENTITY_PROVIDER'; choose kanidm, external_oidc, or none." ;; esac
+  install_state_set identity_provider "$IDENTITY_PROVIDER" || fail "could not save installer progress to $INSTALL_STATE_FILE."
 }
 
 select_llama_cpp_endpoint() {
-  local saved_url="" candidate="" probe_output="" probe_status=0 normalized_url=""
+  local saved_url="" progress_url="" candidate="" probe_output="" probe_status=0 normalized_url=""
   local config_file=/etc/aggregare/ysparr-upstream.json
+
+  progress_url="$(install_state_get llama_cpp_url)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
 
   if sudo test -r "$config_file"; then
     saved_url="$(sudo python3 - "$config_file" <<'PY'
@@ -99,6 +164,12 @@ PY
 
   if [[ -n "$LLAMA_CPP_URL" ]]; then
     candidate="$LLAMA_CPP_URL"
+  elif [[ -n "$progress_url" ]]; then
+    candidate="$progress_url"
+    printf 'Resuming with saved llama.cpp endpoint: %s\n' "$candidate"
+  elif [[ -n "$saved_url" ]]; then
+    candidate="$saved_url"
+    printf 'Using saved llama.cpp endpoint: %s\n' "$candidate"
   else
     [[ -t 0 ]] || {
       [[ -n "$saved_url" ]] && { LLAMA_CPP_URL="$saved_url"; return 0; }
@@ -116,6 +187,7 @@ PY
         normalized_url="$(awk '/^Using Ysparr upstream base URL:/ { sub(/^Using Ysparr upstream base URL: /, ""); print; exit }' <<<"$probe_output")"
         [[ -n "$normalized_url" ]] || fail "could not normalize the selected llama.cpp endpoint."
         LLAMA_CPP_URL="$normalized_url"
+        install_state_set llama_cpp_url "$LLAMA_CPP_URL" || fail "could not save installer progress to $INSTALL_STATE_FILE."
         return 0
       fi
       printf '%s\n' "$probe_output" >&2
@@ -132,10 +204,26 @@ PY
   printf '%s\n' "$probe_output"
   LLAMA_CPP_URL="$(awk '/^Using Ysparr upstream base URL:/ { sub(/^Using Ysparr upstream base URL: /, ""); print; exit }' <<<"$probe_output")"
   [[ -n "$LLAMA_CPP_URL" ]] || fail "could not normalize the selected llama.cpp endpoint."
+  install_state_set llama_cpp_url "$LLAMA_CPP_URL" || fail "could not save installer progress to $INSTALL_STATE_FILE."
 }
 
 confirm_host_time() {
-  local timezone current_timezone ntp_synchronized
+  local timezone current_timezone ntp_synchronized time_confirmed
+
+  time_confirmed="$(install_state_get host_time_confirmed)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+  if [[ "$time_confirmed" == true ]]; then
+    printf 'Host time was already confirmed during this installation; skipping the prompt.\n'
+    return 0
+  fi
+
+  if [[ "$LEGACY_RESUME" == true ]]; then
+    ntp_synchronized="$(timedatectl show --property=NTPSynchronized --value)" || fail "could not read the host clock synchronization status."
+    if [[ "$ntp_synchronized" == yes ]]; then
+      install_state_set host_time_confirmed true || fail "could not save installer progress to $INSTALL_STATE_FILE."
+      printf 'Resuming the previous installer run; its time confirmation was completed.\n'
+      return 0
+    fi
+  fi
 
   command -v timedatectl >/dev/null 2>&1 || fail "timedatectl is required to confirm the host timezone and network time synchronization."
   current_timezone="$(timedatectl show --property=Timezone --value)" || fail "could not read the host timezone."
@@ -150,6 +238,7 @@ confirm_host_time() {
     if ask_yes_no 'Is the host date, time, and timezone correct? [y/N] '; then
       ntp_synchronized="$(timedatectl show --property=NTPSynchronized --value)" || fail "could not read the host clock synchronization status."
       [[ "$ntp_synchronized" == yes ]] || fail "the system clock is not synchronized. Enable and verify network time synchronization, then rerun install.sh. Check with: timedatectl status"
+      install_state_set host_time_confirmed true || fail "could not save installer progress to $INSTALL_STATE_FILE."
       return 0
     fi
 
@@ -210,6 +299,17 @@ source /etc/os-release
 [[ "${ID:-}" == ubuntu && "${VERSION_ID:-}" == 26.04 ]] || fail "this bootstrap currently supports Ubuntu Server 26.04."
 command -v python3 >/dev/null 2>&1 || fail "Python 3 is required by Ubuntu and was not found."
 command -v ip >/dev/null 2>&1 || fail "the ip command is missing; install Ubuntu's iproute2 package first."
+
+if [[ "${RESET_INSTALL_PROGRESS:-false}" == true ]]; then
+  sudo rm -f -- "$INSTALL_STATE_FILE"
+  printf 'Saved installer progress cleared. Completed system configuration was left in place.\n'
+elif [[ -e "$INVENTORY_FILE" ]]; then
+  expected_inventory="$(printf '[aggregare]\nlocalhost ansible_connection=local\n')"
+  if [[ "$(cat "$INVENTORY_FILE")" == "$expected_inventory" ]]; then
+    LEGACY_RESUME=true
+  fi
+fi
+
 confirm_host_time
 select_identity_provider
 select_llama_cpp_endpoint
@@ -250,10 +350,22 @@ else
   printf 'I could not detect a private LAN address; check the server network before connecting.\n'
 fi
 
-LAN_ACCESS=false
+LAN_ACCESS="$(install_state_get lan_access)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
 LAN_ADDRESS=127.0.0.1
 LAN_SUBNET=""
-if ask_yes_no 'Should the user-facing applications be reachable by other devices on your private LAN? [y/N] '; then
+if [[ "$LAN_ACCESS" == true ]]; then
+  printf 'Resuming with LAN access enabled.\n'
+elif [[ "$LAN_ACCESS" == false ]]; then
+  printf 'Resuming with applications restricted to this server.\n'
+else
+  if ask_yes_no 'Should the user-facing applications be reachable by other devices on your private LAN? [y/N] '; then
+    LAN_ACCESS=true
+  else
+    LAN_ACCESS=false
+  fi
+  install_state_set lan_access "$LAN_ACCESS" || fail "could not save installer progress to $INSTALL_STATE_FILE."
+fi
+if [[ "$LAN_ACCESS" == true ]]; then
   detect_lan_address || fail "I could not find a private IPv4 address on the default network interface. Configure the server's private LAN network and try again, or choose no."
   LAN_ACCESS=true
   printf 'User-facing applications will bind to %s (network %s).\n' "$LAN_ADDRESS" "$LAN_SUBNET"
@@ -308,12 +420,41 @@ if [[ -f "$VAULT_VARS_FILE" ]] && grep -q '^\$ANSIBLE_VAULT;' "$VAULT_VARS_FILE"
 fi
 
 cd "$ANSIBLE_DIR"
-sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/phase25-identity-config.yml \
-  --extra-vars "{\"aggregare_identity_provider\":\"$IDENTITY_PROVIDER\",\"aggregare_identity_provider_update\":$IDENTITY_PROVIDER_UPDATE}"
-sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/default.yml \
-  --extra-vars "$BOOTSTRAP_EXTRA_VARS" "${ANSIBLE_VAULT_ARGS[@]}"
-sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/welcome.yml \
-  --extra-vars "$WELCOME_EXTRA_VARS"
+IDENTITY_CONFIG_COMPLETE="$(install_state_get identity_config_playbook_complete)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+IDENTITY_CONFIG_SIGNATURE="$(printf '%s\n%s' "$AGGREGARE_VERSION" "$IDENTITY_PROVIDER" | sha256sum | awk '{print $1}')"
+IDENTITY_CONFIG_APPLIED_SIGNATURE="$(install_state_get identity_config_applied_signature)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+if [[ "$IDENTITY_PROVIDER_UPDATE" == true || "$IDENTITY_CONFIG_COMPLETE" != true || "$IDENTITY_CONFIG_APPLIED_SIGNATURE" != "$IDENTITY_CONFIG_SIGNATURE" ]]; then
+  sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/phase25-identity-config.yml \
+    --extra-vars "{\"aggregare_identity_provider\":\"$IDENTITY_PROVIDER\",\"aggregare_identity_provider_update\":$IDENTITY_PROVIDER_UPDATE}"
+  install_state_set identity_config_playbook_complete true || fail "identity setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+  install_state_set identity_config_applied_signature "$IDENTITY_CONFIG_SIGNATURE" || fail "identity setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+else
+  printf 'Identity configuration playbook already completed; skipping.\n'
+fi
+
+DEFAULT_PLAYBOOK_COMPLETE="$(install_state_get default_playbook_complete)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+DEFAULT_PLAYBOOK_SIGNATURE="$(printf '%s\n%s' "$AGGREGARE_VERSION" "$BOOTSTRAP_EXTRA_VARS" | sha256sum | awk '{print $1}')"
+DEFAULT_PLAYBOOK_APPLIED_SIGNATURE="$(install_state_get default_playbook_applied_signature)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+if [[ "$DEFAULT_PLAYBOOK_COMPLETE" != true || "$DEFAULT_PLAYBOOK_APPLIED_SIGNATURE" != "$DEFAULT_PLAYBOOK_SIGNATURE" ]]; then
+  sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/default.yml \
+    --extra-vars "$BOOTSTRAP_EXTRA_VARS" "${ANSIBLE_VAULT_ARGS[@]}"
+  install_state_set default_playbook_complete true || fail "default application setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+  install_state_set default_playbook_applied_signature "$DEFAULT_PLAYBOOK_SIGNATURE" || fail "default application setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+else
+  printf 'Default application playbook already completed; skipping.\n'
+fi
+
+WELCOME_PLAYBOOK_COMPLETE="$(install_state_get welcome_playbook_complete)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+WELCOME_PLAYBOOK_SIGNATURE="$(printf '%s\n%s' "$AGGREGARE_VERSION" "$PROJECT_ROOT/docs/deployment/aggregare-server.md" | sha256sum | awk '{print $1}')"
+WELCOME_PLAYBOOK_APPLIED_SIGNATURE="$(install_state_get welcome_playbook_applied_signature)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+if [[ "$WELCOME_PLAYBOOK_COMPLETE" != true || "$WELCOME_PLAYBOOK_APPLIED_SIGNATURE" != "$WELCOME_PLAYBOOK_SIGNATURE" ]]; then
+  sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/welcome.yml \
+    --extra-vars "$WELCOME_EXTRA_VARS"
+  install_state_set welcome_playbook_complete true || fail "welcome playbook completed, but progress could not be saved to $INSTALL_STATE_FILE."
+  install_state_set welcome_playbook_applied_signature "$WELCOME_PLAYBOOK_SIGNATURE" || fail "welcome playbook completed, but progress could not be saved to $INSTALL_STATE_FILE."
+else
+  printf 'Welcome playbook already completed; skipping.\n'
+fi
 
 printf '\nAggregare default application bundle installation finished.\n'
 printf 'The Aggregare login banner is installed; log out and back in to see it.\n'

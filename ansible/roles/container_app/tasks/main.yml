@@ -127,8 +127,8 @@
         method: GET
         status_code: "{{ application_health_status_codes }}"
       register: application_health
-      retries: 24
-      delay: 5
+      retries: 30
+      delay: 10
       until: application_health.status | default(0) in application_health_status_codes
 
     - name: Require a successful application health response
