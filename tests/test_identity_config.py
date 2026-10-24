@@ -98,8 +98,21 @@ class IdentityConfigTests(unittest.TestCase):
         self.assertIn("aggregare_identity_provider in ['kanidm', 'external_oidc', 'none']", playbook)
         self.assertIn("Deploy Kanidm service", playbook)
         self.assertIn("aggregare_identity_provider_effective == 'kanidm'", playbook)
+        self.assertIn("--dns-only", playbook)
+        self.assertLess(playbook.index("--dns-only"), playbook.index("Persist version 2 Kanidm endpoint selection"))
+        self.assertLess(playbook.index("Start or safely reapply Kanidm service"),
+                        playbook.index("Verify Kanidm status endpoint"))
+        self.assertLess(playbook.index("Require a valid certificate, hostname match"),
+                        playbook.index("Run shared DNS preflight"))
+        self.assertIn("Reuse the persisted Kanidm endpoint", playbook)
+        self.assertIn("aggregare_identity_saved_config.identity_domain | default('')", playbook)
+        self.assertIn("aggregare_identity_saved_config.identity_origin | default('')", playbook)
         self.assertIn('IDENTITY_CONFIG_FILE="/etc/aggregare/identity.json"', installer)
         self.assertIn("aggregare_identity_config_file: /etc/aggregare/identity.json", playbook)
+        self.assertIn("get-field identity_domain", installer)
+        self.assertIn("get-field identity_origin", installer)
+        self.assertIn('IDENTITY_DOMAIN="${IDENTITY_DOMAIN:-$saved_domain}"', installer)
+        self.assertIn('IDENTITY_ORIGIN="${IDENTITY_ORIGIN:-$saved_origin}"', installer)
         self.assertIn("this installer needs an interactive terminal", installer)
         self.assertFalse(any("kanidm" in path.name.lower() for path in (ROOT / "ansible/roles").iterdir()))
 
@@ -118,10 +131,7 @@ class IdentityConfigTests(unittest.TestCase):
             data.mkdir()
             marker = data / "identity.db"
             marker.write_bytes(b"existing identity data")
-            cert = root / "chain.pem"
-            key = root / "key.pem"
-            cert.write_text("test certificate")
-            key.write_text("test private key")
+            cert, key = self.create_tls_pair(root, "id.example.invalid")
             result = self.run_ansible(
                 config, provider="kanidm", domain="id.example.invalid",
                 origin="https://id.example.invalid", chain=str(cert), key=str(key),
@@ -129,6 +139,36 @@ class IdentityConfigTests(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("origin_dns", result.stdout + result.stderr)
+            self.assertEqual(config.read_bytes(), original)
+            self.assertEqual(marker.read_bytes(), b"existing identity data")
+
+    def test_mismatched_tls_key_fails_before_identity_or_data_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "identity.json"
+            config.write_text(json.dumps({
+                "schema_version": 2,
+                "identity_provider": "kanidm",
+                "identity_domain": "id.home.arpa",
+                "identity_origin": "https://id.home.arpa",
+            }) + "\n")
+            original = config.read_bytes()
+            data = root / "kanidm-data"
+            data.mkdir()
+            marker = data / "identity.db"
+            marker.write_bytes(b"existing identity data")
+            cert, _ = self.create_tls_pair(root, "id.home.arpa")
+            wrong_key = root / "wrong-key.pem"
+            subprocess.run([
+                "openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048",
+                "-out", str(wrong_key),
+            ], check=True, capture_output=True, text=True)
+            result = self.run_ansible(
+                config, provider="kanidm", domain="id.home.arpa", origin="https://id.home.arpa",
+                chain=str(cert), key=str(wrong_key), data_dir=str(data),
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("matching unencrypted PEM private key", result.stdout + result.stderr)
             self.assertEqual(config.read_bytes(), original)
             self.assertEqual(marker.read_bytes(), b"existing identity data")
 
@@ -192,6 +232,18 @@ class IdentityConfigTests(unittest.TestCase):
         if check and result.returncode != 0:
             self.fail(result.stdout + result.stderr)
         return result
+
+    def create_tls_pair(self, directory, hostname):
+        if not shutil.which("openssl"):
+            self.skipTest("OpenSSL is required to validate certificate/key inputs")
+        cert = directory / "chain.pem"
+        key = directory / "key.pem"
+        subprocess.run([
+            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "365",
+            "-keyout", str(key), "-out", str(cert), "-subj", f"/CN={hostname}",
+            "-addext", f"subjectAltName=DNS:{hostname}",
+        ], check=True, capture_output=True, text=True)
+        return cert, key
 
 
 if __name__ == "__main__":

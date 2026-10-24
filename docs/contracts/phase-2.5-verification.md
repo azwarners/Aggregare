@@ -1,5 +1,17 @@
 # Phase 2.5 live verification record
 
+## 2026-10-23: issue #17 fresh-deployment preflight correction
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Fresh-install ordering review | Defect confirmed | The identity playbook previously required a successful HTTPS/TLS handshake before installing Kanidm, so a clean host without the service endpoint failed before installation. |
+| Pre-deployment validation | Passed | Shared preflight now supports DNS-only checks; the playbook also validates certificate hostname/expiry and certificate/private-key pairing before persistent changes. |
+| Saved endpoint reapplication | Passed | The playbook reuses the persisted domain and origin when replacement variables are omitted and only writes identity config when it is absent or needs schema migration. |
+| Focused regression tests | Passed | `python3 -m unittest tests.test_identity_preflight tests.test_identity_config -v` (23 tests), including DNS-only without HTTPS and no mutation for DNS or certificate/key failures. |
+| Live Kanidm deployment | Not run | The dev host still needs an administrator-selected domain/origin, working DNS, and matching certificate/key; no site values were guessed. |
+
+No DNS, certificate, proxy/router/firewall, or production settings were changed.
+
 ## 2026-10-23: issue #17 pinned Kanidm deployment
 
 | Check | Result | Evidence |

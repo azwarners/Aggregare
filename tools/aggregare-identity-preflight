@@ -69,7 +69,7 @@ def fetch_discovery(issuer, cafile):
     return url, sorted(key for key in document if key.endswith("_endpoint"))
 
 
-def run_checks(origin, issuer, cafile):
+def run_checks(origin, issuer, cafile, dns_only=False):
     origin_url = validate_url(origin, "origin")
     checks = []
     hosts = [("origin", origin_url.hostname, origin_url.port or 443)]
@@ -83,6 +83,8 @@ def run_checks(origin, issuer, cafile):
         except (OSError, UnicodeError) as exc:
             checks.append({"name": f"{label}_dns", "status": "failed", "host": host, "detail": str(exc)})
             continue
+        if dns_only:
+            continue
         try:
             version = check_tls(host, port, cafile)
             checks.append({"name": f"{label}_tls", "status": "passed", "host": host,
@@ -90,7 +92,8 @@ def run_checks(origin, issuer, cafile):
         except (OSError, ssl.SSLError, ValueError) as exc:
             checks.append({"name": f"{label}_tls", "status": "failed", "host": host, "port": port,
                            "detail": str(exc)})
-    if issuer and any(check["name"] == "issuer_tls" and check["status"] == "passed" for check in checks):
+    if (not dns_only and issuer
+            and any(check["name"] == "issuer_tls" and check["status"] == "passed" for check in checks)):
         try:
             discovery, endpoints = fetch_discovery(issuer, cafile)
             checks.append({"name": "issuer_discovery", "status": "passed", "url": discovery,
@@ -101,15 +104,15 @@ def run_checks(origin, issuer, cafile):
     return checks
 
 
-def check_context(name, origin, issuer, cafile):
+def check_context(name, origin, issuer, cafile, dns_only=False):
     if name == "host":
-        return run_checks(origin, issuer, cafile)
+        return run_checks(origin, issuer, cafile, dns_only)
     source = Path(__file__).read_bytes()
     import base64
     encoded = base64.b64encode(source).decode("ascii")
     remote = ("import base64,sys; ns={'__name__':'identity_preflight_remote'}; "
               f"exec(compile(base64.b64decode('{encoded}'), '<identity-preflight>', 'exec'), ns); "
-              f"print(json.dumps(ns['run_checks']({origin!r},{issuer!r},{cafile!r})))")
+              f"print(json.dumps(ns['run_checks']({origin!r},{issuer!r},{cafile!r},{dns_only!r})))")
     try:
         result = subprocess.run(["podman", "exec", name, "python3", "-c", remote],
                                 capture_output=True, text=True, timeout=TIMEOUT * 3, check=False)
@@ -138,10 +141,10 @@ def check_context(name, origin, issuer, cafile):
                  "detail": "container returned an invalid preflight report"}]
 
 
-def make_report(origin, issuer, cafile, containers):
-    contexts = [{"name": "host", "checks": check_context("host", origin, issuer, cafile)}]
+def make_report(origin, issuer, cafile, containers, dns_only=False):
+    contexts = [{"name": "host", "checks": check_context("host", origin, issuer, cafile, dns_only)}]
     contexts.extend({"name": container,
-                     "checks": check_context(container, origin, issuer, cafile)} for container in containers)
+                     "checks": check_context(container, origin, issuer, cafile, dns_only)} for container in containers)
     passed = all(check["status"] == "passed" for context in contexts for check in context["checks"])
     report = {"schema_version": "v1", "status": "passed" if passed else "failed",
               "origin": origin, "contexts": contexts}
@@ -163,6 +166,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--origin", required=True, help="trusted HTTPS identity origin")
     parser.add_argument("--issuer", help="canonical HTTPS OIDC issuer URL (optional before provider setup)")
+    parser.add_argument("--dns-only", action="store_true",
+                        help="check hostname resolution only; use before the HTTPS service is running")
     parser.add_argument("--cafile", help="optional PEM CA bundle for a private CA")
     parser.add_argument("--container", action="append", default=[], metavar="NAME",
                         help="also check an explicitly named Podman container (repeatable; requires python3 there)")
@@ -176,7 +181,7 @@ def main(argv=None):
             validate_url(args.issuer, "issuer")
     except ValueError as exc:
         parser.error(str(exc))
-    report = make_report(args.origin, args.issuer, args.cafile, args.container)
+    report = make_report(args.origin, args.issuer, args.cafile, args.container, args.dns_only)
     if args.format == "json":
         json.dump(report, sys.stdout, indent=2)
         sys.stdout.write("\n")
