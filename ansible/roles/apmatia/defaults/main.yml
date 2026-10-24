@@ -1,0 +1,17 @@
+---
+apmatia_state: present
+apmatia_version: 0.0.1.7
+apmatia_source: https://github.com/azwarners/Apmatia.git
+apmatia_source_ref: bddc27cb369579cc5f912a556aab1612e2034482
+apmatia_host: 127.0.0.1
+apmatia_port: 8001
+apmatia_home: /var/lib/apmatia/app
+apmatia_data_dir: /var/lib/apmatia/data
+apmatia_config_dir: /var/lib/apmatia/config
+apmatia_credentials_path: /etc/aggregare/apmatia-credentials.json
+apmatia_bootstrap_state_path: /etc/aggregare/apmatia-bootstrap-state.json
+apmatia_bootstrap_username: aggregare-owner
+apmatia_upstream_base_url: ''
+apmatia_upstream_api_key: ''
+apmatia_upstream_config_path: /etc/aggregare/ysparr-upstream.json
+apmatia_public_base_url: "http://{{ apmatia_host }}:{{ apmatia_port }}"

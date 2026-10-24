@@ -1,13 +1,8 @@
+---
 - name: Install or remove Apmatia
   hosts: aggregare
   become: true
   vars:
-    python_app_id: apmatia
-    python_app_version: 0.0.1.7
-    python_app_source: https://github.com/azwarners/Apmatia.git
-    python_app_ref: a72eeb8fd9319c304e98968d2be4124840540617
-    python_app_module: apmatia
-  tasks:
-  - name: Install Apmatia from its pinned upstream source
-    ansible.builtin.import_role:
-      name: python_app
+    apmatia_state: present
+  roles:
+    - apmatia

@@ -7,6 +7,14 @@
       - ansible_facts.distribution_version is version('24.04', '>=')
     fail_msg: Ysparr is currently supported on Ubuntu 24.04 and later.
 
+- name: Check the Ysparr port contract
+  ansible.builtin.import_role:
+    name: port_check
+  vars:
+    port_check_port: "{{ ysparr_port }}"
+    port_check_service: ysparr.service
+  when: ysparr_state == 'present'
+
 - name: Remove Ysparr service and software
   when: ysparr_state == 'absent'
   block:
@@ -76,6 +84,107 @@
         - { path: /var/lib/ysparr, owner: ysparr, group: ysparr, mode: '0750' }
         - { path: /var/lib/aggregare/status, owner: root, group: root, mode: '0755' }
         - { path: /etc/aggregare, owner: root, group: root, mode: '0750' }
+
+    - name: Check for saved Ysparr upstream settings
+      ansible.builtin.stat:
+        path: "{{ ysparr_upstream_config_path }}"
+      register: ysparr_upstream_config_file
+
+    - name: Read the saved Ysparr upstream configuration
+      ansible.builtin.include_vars:
+        file: "{{ ysparr_upstream_config_path }}"
+        name: ysparr_saved_upstream_config
+      when: ysparr_upstream_config_file.stat.exists
+      no_log: true
+
+    - name: Select the effective Ysparr upstream settings
+      ansible.builtin.set_fact:
+        ysparr_upstream_base_url_selected: >-
+          {{ (ysparr_upstream_base_url | default('', true) | trim)
+             or (ysparr_saved_upstream_config.ysparr_upstream_base_url | default('http://127.0.0.1:4000')) }}
+        ysparr_upstream_api_key_effective: >-
+          {{ '' if ysparr_upstream_api_key_reset | bool else
+             ((ysparr_upstream_api_key | default('', true) | trim)
+             or (ysparr_saved_upstream_config.ysparr_upstream_api_key | default(''))) }}
+      no_log: true
+
+    - name: Add the default HTTP scheme when the upstream URL omits one
+      ansible.builtin.set_fact:
+        ysparr_upstream_base_url_effective: >-
+          {{ ysparr_upstream_base_url_selected if '://' in ysparr_upstream_base_url_selected
+             else 'http://' ~ ysparr_upstream_base_url_selected }}
+      no_log: true
+
+    - name: Validate the Ysparr upstream base URL
+      ansible.builtin.assert:
+        that:
+          - ysparr_upstream_base_url_effective | urlsplit('scheme') in ['http', 'https']
+          - ysparr_upstream_base_url_effective | urlsplit('hostname') | length > 0
+          - ysparr_upstream_base_url_effective | urlsplit('path') in ['', '/', '/v1', '/v1/']
+          - ysparr_upstream_base_url_effective | urlsplit('username') | default('', true) | length == 0
+          - ysparr_upstream_base_url_effective | urlsplit('password') | default('', true) | length == 0
+          - ysparr_upstream_base_url_effective | urlsplit('query') | default('', true) | length == 0
+          - ysparr_upstream_base_url_effective | urlsplit('fragment') | default('', true) | length == 0
+        fail_msg: >-
+          Set ysparr_upstream_base_url to an http:// or https:// OpenAI-compatible
+          server root URL, optionally ending in /v1. Do not include credentials,
+          query parameters, or other paths.
+
+    - name: Normalize the upstream URL and build the models probe URL
+      ansible.builtin.set_fact:
+        ysparr_upstream_base_url_normalized: >-
+          {{ ysparr_upstream_base_url_effective | regex_replace('/v1/?$', '') | regex_replace('/+$', '') }}
+        ysparr_upstream_models_url: >-
+          {{ (ysparr_upstream_base_url_effective | regex_replace('/v1/?$', '') | regex_replace('/+$', '')) }}/v1/models
+
+    - name: Check the configured upstream models endpoint
+      ansible.builtin.uri:
+        url: "{{ ysparr_upstream_models_url }}"
+        method: GET
+        headers: "{{ {'Authorization': 'Bearer ' ~ ysparr_upstream_api_key_effective} if ysparr_upstream_api_key_effective | length > 0 else {} }}"
+        status_code: [200, 401, 403, 404]
+        return_content: true
+        timeout: 8
+        validate_certs: true
+      register: ysparr_upstream_models_probe
+      failed_when: false
+      retries: 12
+      delay: 20
+      until: ysparr_upstream_models_probe.status | default(0) | int in [200, 401, 403, 404]
+      no_log: true
+
+    - name: Require a reachable OpenAI-compatible models endpoint
+      ansible.builtin.assert:
+        that:
+          - ysparr_upstream_models_probe.status | default(0) | int == 200
+          - (ysparr_upstream_models_probe.json | default({})).data | default([]) is sequence
+          - (ysparr_upstream_models_probe.json | default({})).data | default([]) is not string
+          - (ysparr_upstream_models_probe.json | default({})).data | default([]) | length > 0
+        fail_msg: >-
+          {% set status = ysparr_upstream_models_probe.status | default(0) | int %}
+          {% if status in [401, 403] %}
+          The upstream is reachable but requires authentication. Set
+          ysparr_upstream_api_key in Ansible Vault variables, then reapply.
+          {% elif status == 404 %}
+          The upstream returned 404 for /v1/models. Check its host and port and
+          use its OpenAI-compatible API root (the URL may end in /v1).
+          {% elif status == 0 %}
+          The upstream could not be reached from this host. Check DNS, port,
+          firewall, and server state. For a container, use its host-published
+          address; 127.0.0.1 inside the container is not the Aggregare host.
+          {% else %}
+          The upstream returned HTTP {{ status }} or an invalid/empty models response.
+          Check the server health, load a model, and verify /v1/models.
+          {% endif %}
+
+    - name: Persist protected Ysparr upstream settings
+      ansible.builtin.template:
+        src: ysparr-upstream.json.j2
+        dest: "{{ ysparr_upstream_config_path }}"
+        owner: root
+        group: ysparr
+        mode: '0640'
+      no_log: true
 
     - name: Check out the pinned Ysparr source
       ansible.builtin.git:
@@ -149,7 +258,7 @@
         status_code: 200
       register: ysparr_health
       retries: 12
-      delay: 5
+      delay: 20
       until: ysparr_health.status == 200
 
     - name: Write machine-readable Ysparr status

@@ -1,0 +1,42 @@
+{
+  "id": "default",
+  "display_name": "Aggregare default operating system",
+  "description": "The default Aggregare system includes the AI chat applications and core productivity applications.",
+  "applications": ["ysparr", "apmatia", "open-webui", "memos", "habitsync", "vikunja", "openipe"],
+  "entry_point": "ansible/playbooks/default.yml",
+  "application_order": ["ysparr", "apmatia", "open-webui", "memos", "habitsync", "vikunja", "openipe"],
+  "dependencies": {
+    "open-webui": ["application:ysparr"],
+    "habitsync": ["system:podman", "system:openssl", "system:apache2-utils"],
+    "vikunja": ["system:podman"],
+    "memos": ["system:podman>=4.9"]
+  },
+  "upstream_pins": {
+    "open-webui-image": "ghcr.io/open-webui/open-webui:v0.11.4",
+    "memos-image": "ghcr.io/usememos/memos:0.31.0",
+    "habitsync-image": "ghcr.io/jofoerster/habitsync:0.19.3",
+    "vikunja-image": "docker.io/vikunja/vikunja:2.6.0",
+    "ysparr-git": "aa2e12f7ee51f9d9d6bb0dc2b17708e7c7b94a98",
+    "apmatia-git": "bddc27cb369579cc5f912a556aab1612e2034482",
+    "openipe-git": "da7842181cca04c05ebbc19cef9cf50759e709b7"
+  },
+  "persistent_paths": [
+    "/var/lib/ysparr",
+    "/var/lib/apmatia/app",
+    "/var/lib/apmatia/data",
+    "/var/lib/apmatia/config",
+    "/etc/aggregare/apmatia-credentials.json",
+    "/etc/aggregare/apmatia-bootstrap-state.json",
+    "/var/lib/aggregare/open-webui",
+    "/var/lib/aggregare/memos",
+    "/var/lib/aggregare/habitsync",
+    "/var/lib/aggregare/vikunja",
+    "/etc/aggregare/secrets/habitsync-jwt",
+    "/etc/aggregare/secrets/habitsync-password",
+    "/etc/aggregare/habitsync-credentials"
+  ],
+  "notes": [
+    "AI chat and productivity applications install together; installing this bundle does not remove or replace existing applications.",
+    "Apmatia runs its core API with persistent state and publishes five prompt-only starter agents to Ysparr. OpenIPE remains a pinned Python package."
+  ]
+}

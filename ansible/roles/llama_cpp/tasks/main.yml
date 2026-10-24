@@ -135,7 +135,7 @@
         status_code: 200
       register: llama_cpp_health
       retries: 12
-      delay: 5
+      delay: 20
       until: llama_cpp_health.status == 200
       when: llama_cpp_model.stat.isreg | default(false)
 

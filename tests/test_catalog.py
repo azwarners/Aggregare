@@ -45,7 +45,7 @@ class CatalogContractTests(unittest.TestCase):
                     self.assertEqual(entry["status"], "blocked")
                     self.assertEqual(entry["install_methods"], [])
 
-        self.assertEqual(len(app_ids), 17)
+        self.assertEqual(len(app_ids), 18)
 
     def test_pocket_id_is_not_part_of_a_fresh_install(self):
         app_ids = {ref["id"] for ref in self.catalog["applications"]}

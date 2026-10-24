@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
-# Phase 2 bootstrap: install one fixed example through the shared Ansible role.
-# Application selection, presets, and previews belong to the Phase 3 client.
+# Install the Aggregare default operating-system bundle through shared Ansible roles.
 set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,8 +8,12 @@ ANSIBLE_DIR="$PROJECT_ROOT/ansible"
 INVENTORY_FILE="$ANSIBLE_DIR/inventory.ini"
 VERSION_FILE="$PROJECT_ROOT/VERSION"
 IDENTITY_CONFIG_FILE="/etc/aggregare/identity.json"
+INSTALL_STATE_FILE="/var/lib/aggregare/installer-state.json"
 IDENTITY_PROVIDER=""
 IDENTITY_PROVIDER_UPDATE=false
+LLAMA_CPP_URL=""
+LAN_ACCESS=""
+LEGACY_RESUME=false
 
 while (($#)); do
   case "$1" in
@@ -20,8 +23,17 @@ while (($#)); do
       IDENTITY_PROVIDER_UPDATE=true
       shift 2
       ;;
+    --llama-cpp-url)
+      (($# >= 2)) || { printf 'Installer stopped: --llama-cpp-url needs an http:// or https:// OpenAI-compatible server base URL.\n' >&2; exit 2; }
+      LLAMA_CPP_URL="$2"
+      shift 2
+      ;;
+    --reset-progress)
+      RESET_INSTALL_PROGRESS=true
+      shift
+      ;;
     --help|-h)
-      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none]\n'
+      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--llama-cpp-url URL] [--reset-progress]\n'
       exit 0
       ;;
     *) printf 'Installer stopped: unknown option: %s\n' "$1" >&2; exit 2 ;;
@@ -33,6 +45,60 @@ fail() {
   exit 1
 }
 
+install_state_get() {
+  sudo python3 - "$INSTALL_STATE_FILE" "$1" <<'PY'
+import json
+import os
+import sys
+
+path, key = sys.argv[1:]
+if not os.path.exists(path):
+    raise SystemExit(0)
+try:
+    with open(path, encoding="utf-8") as state_file:
+        state = json.load(state_file)
+except (OSError, json.JSONDecodeError) as error:
+    print(f"Installer progress file {path} is invalid: {error}", file=sys.stderr)
+    raise SystemExit(1)
+value = state.get(key, "")
+if isinstance(value, bool):
+    print("true" if value else "false")
+elif value is not None:
+    print(value)
+PY
+}
+
+install_state_set() {
+  sudo python3 - "$INSTALL_STATE_FILE" "$1" "$2" <<'PY'
+import json
+import os
+import sys
+import tempfile
+
+path, key, value = sys.argv[1:]
+os.makedirs(os.path.dirname(path), mode=0o755, exist_ok=True)
+state = {}
+if os.path.exists(path):
+    with open(path, encoding="utf-8") as state_file:
+        state = json.load(state_file)
+state[key] = value
+fd, temporary_path = tempfile.mkstemp(prefix=".installer-state-", dir=os.path.dirname(path), text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as state_file:
+        json.dump(state, state_file, indent=2, sort_keys=True)
+        state_file.write("\n")
+    os.chmod(temporary_path, 0o644)
+    os.replace(temporary_path, path)
+finally:
+    if os.path.exists(temporary_path):
+        os.unlink(temporary_path)
+PY
+}
+
+application_status_is_complete() {
+  sudo python3 "$PROJECT_ROOT/tools/installer_recovery.py" "$1" "$2"
+}
+
 case "$IDENTITY_PROVIDER" in
   ""|kanidm|external_oidc|none) ;;
   *) printf 'Installer stopped: invalid identity provider "%s"; choose kanidm, external_oidc, or none.\n' "$IDENTITY_PROVIDER" >&2; exit 2 ;;
@@ -41,7 +107,7 @@ esac
 ask_yes_no() {
   local answer
   while true; do
-    read -r -p "${1:-Should Memos be reachable by other devices on your private LAN? [y/N] }" answer
+    read -r -p "${1:-Should the user-facing applications be reachable by other devices on your private LAN? [y/N] }" answer
     case "${answer,,}" in
       y|yes) return 0 ;;
       ''|n|no) return 1 ;;
@@ -51,9 +117,14 @@ ask_yes_no() {
 }
 
 select_identity_provider() {
-  local saved_provider=""
+  local saved_provider="" progress_provider=""
+  progress_provider="$(install_state_get identity_provider)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
   if [[ -r "$IDENTITY_CONFIG_FILE" ]]; then
     saved_provider="$(python3 "$PROJECT_ROOT/tools/aggregare-identity-config" get-provider "$IDENTITY_CONFIG_FILE")" || fail "saved identity configuration is invalid; review $IDENTITY_CONFIG_FILE."
+  fi
+  if [[ -z "$IDENTITY_PROVIDER" && -n "$progress_provider" ]]; then
+    IDENTITY_PROVIDER="$progress_provider"
+    printf 'Resuming with saved identity provider selection: %s\n' "$IDENTITY_PROVIDER"
   fi
   if [[ -z "$IDENTITY_PROVIDER" && -n "$saved_provider" ]]; then
     IDENTITY_PROVIDER="$saved_provider"
@@ -72,10 +143,100 @@ select_identity_provider() {
     esac
   fi
   case "$IDENTITY_PROVIDER" in kanidm|external_oidc|none) ;; *) fail "invalid identity provider '$IDENTITY_PROVIDER'; choose kanidm, external_oidc, or none." ;; esac
+  install_state_set identity_provider "$IDENTITY_PROVIDER" || fail "could not save installer progress to $INSTALL_STATE_FILE."
+}
+
+select_llama_cpp_endpoint() {
+  local saved_url="" progress_url="" candidate="" probe_output="" probe_status=0 normalized_url=""
+  local config_file=/etc/aggregare/ysparr-upstream.json
+
+  progress_url="$(install_state_get llama_cpp_url)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+
+  if sudo test -r "$config_file"; then
+    saved_url="$(sudo python3 - "$config_file" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as config_file:
+        print(json.load(config_file).get("ysparr_upstream_base_url", ""))
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(1)
+PY
+    )" || fail "the saved Ysparr upstream configuration is invalid; review $config_file."
+  fi
+
+  if [[ -n "$LLAMA_CPP_URL" ]]; then
+    candidate="$LLAMA_CPP_URL"
+  elif [[ -n "$progress_url" ]]; then
+    candidate="$progress_url"
+    printf 'Resuming with saved llama.cpp endpoint: %s\n' "$candidate"
+  elif [[ -n "$saved_url" ]]; then
+    candidate="$saved_url"
+    printf 'Using saved llama.cpp endpoint: %s\n' "$candidate"
+  else
+    [[ -t 0 ]] || {
+      [[ -n "$saved_url" ]] && { LLAMA_CPP_URL="$saved_url"; return 0; }
+      fail "a reachable external llama.cpp endpoint is required in noninteractive mode; pass --llama-cpp-url URL or set ysparr_upstream_base_url in inventory."
+    }
+    printf '\nConnect AI chat to an OpenAI-compatible llama.cpp server.\n'
+    printf 'Enter its base URL as seen from this Aggregare server (for example http://192.168.1.20:8080). A trailing /v1 is accepted.\n'
+    while true; do
+      read -r -p "llama.cpp server URL${saved_url:+ [$saved_url]}: " candidate
+      candidate="${candidate:-$saved_url}"
+      [[ -n "$candidate" ]] || { printf 'Enter the reachable server URL.\n'; continue; }
+      probe_output="$("$PROJECT_ROOT/tools/aggregare-llama-endpoint" "$candidate" 2>&1)" || probe_status=$?
+      if ((probe_status == 0 || probe_status == 3)); then
+        printf '%s\n' "$probe_output"
+        normalized_url="$(awk '/^Using Ysparr upstream base URL:/ { sub(/^Using Ysparr upstream base URL: /, ""); print; exit }' <<<"$probe_output")"
+        [[ -n "$normalized_url" ]] || fail "could not normalize the selected llama.cpp endpoint."
+        LLAMA_CPP_URL="$normalized_url"
+        install_state_set llama_cpp_url "$LLAMA_CPP_URL" || fail "could not save installer progress to $INSTALL_STATE_FILE."
+        return 0
+      fi
+      printf '%s\n' "$probe_output" >&2
+      probe_status=0
+    done
+  fi
+
+  if [[ -z "$LLAMA_CPP_URL" && -n "$progress_url" ]]; then
+    # This endpoint passed its onboarding probe when first saved. Keep using
+    # that selection on resume even if it is temporarily offline; the app roles
+    # can defer upstream configuration and retry it on the next installer run.
+    LLAMA_CPP_URL="$progress_url"
+    printf 'Reusing the previously validated llama.cpp endpoint: %s\n' "$LLAMA_CPP_URL"
+    return 0
+  fi
+
+  probe_status=0
+  probe_output="$("$PROJECT_ROOT/tools/aggregare-llama-endpoint" "$candidate" 2>&1)" || probe_status=$?
+  if ((probe_status != 0 && probe_status != 3)); then
+    printf '%s\n' "$probe_output" >&2
+    fail "the provided llama.cpp endpoint did not pass validation."
+  fi
+  printf '%s\n' "$probe_output"
+  LLAMA_CPP_URL="$(awk '/^Using Ysparr upstream base URL:/ { sub(/^Using Ysparr upstream base URL: /, ""); print; exit }' <<<"$probe_output")"
+  [[ -n "$LLAMA_CPP_URL" ]] || fail "could not normalize the selected llama.cpp endpoint."
+  install_state_set llama_cpp_url "$LLAMA_CPP_URL" || fail "could not save installer progress to $INSTALL_STATE_FILE."
 }
 
 confirm_host_time() {
-  local timezone current_timezone ntp_synchronized
+  local timezone current_timezone ntp_synchronized time_confirmed
+
+  time_confirmed="$(install_state_get host_time_confirmed)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+  if [[ "$time_confirmed" == true ]]; then
+    printf 'Host time was already confirmed during this installation; skipping the prompt.\n'
+    return 0
+  fi
+
+  if [[ "$LEGACY_RESUME" == true ]]; then
+    ntp_synchronized="$(timedatectl show --property=NTPSynchronized --value)" || fail "could not read the host clock synchronization status."
+    if [[ "$ntp_synchronized" == yes ]]; then
+      install_state_set host_time_confirmed true || fail "could not save installer progress to $INSTALL_STATE_FILE."
+      printf 'Resuming the previous installer run; its time confirmation was completed.\n'
+      return 0
+    fi
+  fi
 
   command -v timedatectl >/dev/null 2>&1 || fail "timedatectl is required to confirm the host timezone and network time synchronization."
   current_timezone="$(timedatectl show --property=Timezone --value)" || fail "could not read the host timezone."
@@ -90,6 +251,7 @@ confirm_host_time() {
     if ask_yes_no 'Is the host date, time, and timezone correct? [y/N] '; then
       ntp_synchronized="$(timedatectl show --property=NTPSynchronized --value)" || fail "could not read the host clock synchronization status."
       [[ "$ntp_synchronized" == yes ]] || fail "the system clock is not synchronized. Enable and verify network time synchronization, then rerun install.sh. Check with: timedatectl status"
+      install_state_set host_time_confirmed true || fail "could not save installer progress to $INSTALL_STATE_FILE."
       return 0
     fi
 
@@ -150,12 +312,23 @@ source /etc/os-release
 [[ "${ID:-}" == ubuntu && "${VERSION_ID:-}" == 26.04 ]] || fail "this bootstrap currently supports Ubuntu Server 26.04."
 command -v python3 >/dev/null 2>&1 || fail "Python 3 is required by Ubuntu and was not found."
 command -v ip >/dev/null 2>&1 || fail "the ip command is missing; install Ubuntu's iproute2 package first."
+
+if [[ "${RESET_INSTALL_PROGRESS:-false}" == true ]]; then
+  sudo rm -f -- "$INSTALL_STATE_FILE"
+  printf 'Saved installer progress cleared. Completed system configuration was left in place.\n'
+elif [[ -e "$INVENTORY_FILE" ]]; then
+  expected_inventory="$(printf '[aggregare]\nlocalhost ansible_connection=local\n')"
+  if [[ "$(cat "$INVENTORY_FILE")" == "$expected_inventory" ]]; then
+    LEGACY_RESUME=true
+  fi
+fi
+
 confirm_host_time
 select_identity_provider
+select_llama_cpp_endpoint
 
 printf '\nAggregare Server v%s bootstrap\n' "$AGGREGARE_VERSION"
-printf 'This installs Memos as one example application through its Ansible playbook.\n'
-printf 'Other applications remain available through their direct Ansible playbooks.\n\n'
+printf 'The default operating-system bundle includes AI chat, Memos, HabitSync, Vikunja, and OpenIPE.\n\n'
 
 PACKAGES_TO_INSTALL=()
 if ! command -v ansible-playbook >/dev/null 2>&1; then
@@ -190,21 +363,33 @@ else
   printf 'I could not detect a private LAN address; check the server network before connecting.\n'
 fi
 
-LAN_ACCESS=false
+LAN_ACCESS="$(install_state_get lan_access)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
 LAN_ADDRESS=127.0.0.1
 LAN_SUBNET=""
-if ask_yes_no; then
+if [[ "$LAN_ACCESS" == true ]]; then
+  printf 'Resuming with LAN access enabled.\n'
+elif [[ "$LAN_ACCESS" == false ]]; then
+  printf 'Resuming with applications restricted to this server.\n'
+else
+  if ask_yes_no 'Should the user-facing applications be reachable by other devices on your private LAN? [y/N] '; then
+    LAN_ACCESS=true
+  else
+    LAN_ACCESS=false
+  fi
+  install_state_set lan_access "$LAN_ACCESS" || fail "could not save installer progress to $INSTALL_STATE_FILE."
+fi
+if [[ "$LAN_ACCESS" == true ]]; then
   detect_lan_address || fail "I could not find a private IPv4 address on the default network interface. Configure the server's private LAN network and try again, or choose no."
   LAN_ACCESS=true
-  printf 'Memos will bind to %s (network %s).\n' "$LAN_ADDRESS" "$LAN_SUBNET"
+  printf 'User-facing applications will bind to %s (network %s).\n' "$LAN_ADDRESS" "$LAN_SUBNET"
 else
-  printf 'Memos will listen only on this server.\n'
+  printf 'User-facing applications will listen only on this server.\n'
 fi
 
 if [[ -e "$INVENTORY_FILE" ]]; then
   expected_inventory="$(printf '[aggregare]\nlocalhost ansible_connection=local\n')"
   existing_inventory="$(cat "$INVENTORY_FILE")"
-  [[ "$existing_inventory" == "$expected_inventory" ]] || fail "ansible/inventory.ini already contains custom settings. I left it untouched; run the Memos playbook directly with your inventory."
+  [[ "$existing_inventory" == "$expected_inventory" ]] || fail "ansible/inventory.ini already contains custom settings. I left it untouched; run the default playbook directly with your inventory."
 else
   cat > "$INVENTORY_FILE" <<'EOF'
 [aggregare]
@@ -212,13 +397,18 @@ localhost ansible_connection=local
 EOF
 fi
 
-MEMOS_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" <<'PY'
+BOOTSTRAP_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" "$LLAMA_CPP_URL" <<'PY'
 import json
 import sys
 
 print(json.dumps({
     "application_bind_address": sys.argv[1],
+    "habitsync_bind_address": sys.argv[1],
+    "memos_base_url": f"http://{sys.argv[1]}:5230",
+    "habitsync_base_url": f"http://{sys.argv[1]}:6842",
+    "vikunja_base_url": f"http://{sys.argv[1]}:3456",
     "aggregare_identity_provider": sys.argv[2],
+    "ysparr_upstream_base_url": sys.argv[3],
     "ansible_become": False,
 }))
 PY
@@ -236,21 +426,203 @@ print(json.dumps({
 PY
 )"
 
-cd "$ANSIBLE_DIR"
-sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/phase25-identity-config.yml \
-  --extra-vars "{\"aggregare_identity_provider\":\"$IDENTITY_PROVIDER\",\"aggregare_identity_provider_update\":$IDENTITY_PROVIDER_UPDATE}"
-sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/memos.yml \
-  --extra-vars "$MEMOS_EXTRA_VARS"
-sudo "$(command -v ansible-playbook)" -i inventory.ini playbooks/welcome.yml \
-  --extra-vars "$WELCOME_EXTRA_VARS"
+ANSIBLE_VAULT_ARGS=()
+VAULT_VARS_FILE="$ANSIBLE_DIR/group_vars/aggregare/vault.yml"
+if [[ -f "$VAULT_VARS_FILE" ]] && grep -q '^\$ANSIBLE_VAULT;' "$VAULT_VARS_FILE"; then
+  ANSIBLE_VAULT_ARGS+=(--ask-vault-pass)
+fi
 
-printf '\nMemos installation finished. Its status record is /var/lib/aggregare/status/memos.json.\n'
+cd "$ANSIBLE_DIR"
+ANSIBLE_PLAYBOOK="$(command -v ansible-playbook)"
+
+run_playbook_with_progress() {
+  local playbook="$1" extra_vars="$2" task_listing task_total
+  local task_offset="${TASK_PROGRESS_OFFSET:-0}" task_total_override="${TASK_PROGRESS_TOTAL:-}"
+  shift 2
+
+  if [[ -n "$task_total_override" ]]; then
+    task_total="$task_total_override"
+  else
+    task_listing="$(sudo "$ANSIBLE_PLAYBOOK" -i inventory.ini "$playbook" --list-tasks --extra-vars "$extra_vars" 2>&1)" || task_listing=""
+    task_total="$(awk '/^      .*TAGS: / { count++ } END { print count + 0 }' <<<"$task_listing")"
+  fi
+  if ((task_total == 0)); then
+    task_total="?"
+    printf 'Could not calculate the task total for %s; showing the running task number only.\n' "$playbook"
+  else
+    printf 'Starting %s: %s tasks in this playbook.\n' "$playbook" "$task_total"
+  fi
+
+  sudo env \
+    ANSIBLE_CALLBACK_PLUGINS="$ANSIBLE_DIR/callback_plugins" \
+    ANSIBLE_STDOUT_CALLBACK=aggregare_progress \
+    AGGREGARE_TASK_TOTAL="$task_total" \
+    AGGREGARE_TASK_OFFSET="$task_offset" \
+    "$ANSIBLE_PLAYBOOK" -i inventory.ini "$playbook" --extra-vars "$extra_vars" "$@"
+}
+
+IDENTITY_CONFIG_COMPLETE="$(install_state_get identity_config_playbook_complete)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+IDENTITY_CONFIG_SIGNATURE="$(printf '%s\n%s' "$AGGREGARE_VERSION" "$IDENTITY_PROVIDER" | sha256sum | awk '{print $1}')"
+IDENTITY_CONFIG_APPLIED_SIGNATURE="$(install_state_get identity_config_applied_signature)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+if [[ "$IDENTITY_PROVIDER_UPDATE" == true || "$IDENTITY_CONFIG_COMPLETE" != true || "$IDENTITY_CONFIG_APPLIED_SIGNATURE" != "$IDENTITY_CONFIG_SIGNATURE" ]]; then
+  run_playbook_with_progress playbooks/phase25-identity-config.yml \
+    "{\"aggregare_identity_provider\":\"$IDENTITY_PROVIDER\",\"aggregare_identity_provider_update\":$IDENTITY_PROVIDER_UPDATE}"
+  install_state_set identity_config_playbook_complete true || fail "identity setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+  install_state_set identity_config_applied_signature "$IDENTITY_CONFIG_SIGNATURE" || fail "identity setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+else
+  printf 'Identity configuration playbook already completed; skipping.\n'
+fi
+
+DEFAULT_PLAYBOOK_COMPLETE="$(install_state_get default_playbook_complete)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+ANSIBLE_SOURCE_SIGNATURE="$({ find "$ANSIBLE_DIR/playbooks" "$ANSIBLE_DIR/roles" "$ANSIBLE_DIR/callback_plugins" "$ANSIBLE_DIR/group_vars" -type f -print0; printf '%s\0' "$PROJECT_ROOT/install.sh"; } | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
+DEFAULT_PLAYBOOK_SIGNATURE="$(printf '%s\n%s\n%s' "$AGGREGARE_VERSION" "$BOOTSTRAP_EXTRA_VARS" "$ANSIBLE_SOURCE_SIGNATURE" | sha256sum | awk '{print $1}')"
+DEFAULT_PLAYBOOK_APPLIED_SIGNATURE="$(install_state_get default_playbook_applied_signature)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+if [[ "$DEFAULT_PLAYBOOK_COMPLETE" != true || "$DEFAULT_PLAYBOOK_APPLIED_SIGNATURE" != "$DEFAULT_PLAYBOOK_SIGNATURE" ]]; then
+  printf 'Default application bundle changed or has no completion marker; checking each application.\n'
+else
+  printf 'Default application bundle signature matches; checking each application health.\n'
+fi
+mapfile -t DEFAULT_APPLICATION_PLAYBOOKS < <(python3 - "$ANSIBLE_DIR/playbooks/default.yml" <<'PY'
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as playbook:
+    for line in playbook:
+        match = re.fullmatch(r"\s*- import_playbook:\s*([A-Za-z0-9_.-]+\.yml)\s*", line)
+        if match:
+            print(match.group(1))
+PY
+)
+((${#DEFAULT_APPLICATION_PLAYBOOKS[@]} > 0)) || fail "could not read application playbooks from playbooks/default.yml."
+
+DEFAULT_TASK_LISTING="$(sudo "$ANSIBLE_PLAYBOOK" -i inventory.ini playbooks/default.yml --list-tasks --extra-vars "$BOOTSTRAP_EXTRA_VARS" 2>&1)" || fail "could not calculate the default application task total."
+DEFAULT_TASK_TOTAL="$(awk '/^      .*TAGS: / { count++ } END { print count + 0 }' <<<"$DEFAULT_TASK_LISTING")"
+((DEFAULT_TASK_TOTAL > 0)) || fail "could not calculate the default application task total."
+DEFAULT_TASK_OFFSET=0
+APPLICATION_FAILURES=()
+
+  for APPLICATION_PLAYBOOK in "${DEFAULT_APPLICATION_PLAYBOOKS[@]}"; do
+    [[ -f "playbooks/$APPLICATION_PLAYBOOK" ]] || fail "default.yml imports a missing playbook: $APPLICATION_PLAYBOOK."
+    APPLICATION_ID="${APPLICATION_PLAYBOOK%.yml}"
+    case "$APPLICATION_ID" in
+      ysparr) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "ysparr_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/ysparr/defaults/main.yml")" ;;
+      apmatia) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "apmatia_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/apmatia/defaults/main.yml")" ;;
+      openipe) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "python_app_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "playbooks/$APPLICATION_PLAYBOOK")" ;;
+      *) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "application_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "playbooks/$APPLICATION_PLAYBOOK")" ;;
+    esac
+    [[ -n "$APPLICATION_EXPECTED_VERSION" ]] || fail "could not determine the expected version for $APPLICATION_ID."
+    APPLICATION_SIGNATURE="v2:$(python3 - "$ANSIBLE_DIR" "$APPLICATION_PLAYBOOK" "$AGGREGARE_VERSION" "$BOOTSTRAP_EXTRA_VARS" "$APPLICATION_ID" <<'PY'
+import hashlib
+import os
+import re
+import sys
+
+root, playbook, version, extra_vars, application_id = sys.argv[1:]
+playbook_path = os.path.join(root, "playbooks", playbook)
+roles = set()
+pending = [playbook_path]
+files = {playbook_path}
+while pending:
+    path = pending.pop()
+    try:
+        source = open(path, encoding="utf-8").read()
+    except OSError:
+        continue
+    for match in re.finditer(r"(?:role:\s*|name:\s*|^\s*-\s+)([A-Za-z0-9_-]+)\s*$", source, re.M):
+        role = match.group(1)
+        if role in {"aggregare", "localhost"} or role in roles:
+            continue
+        role_dir = os.path.join(root, "roles", role)
+        if not os.path.isdir(role_dir):
+            continue
+        roles.add(role)
+        for directory, _, names in os.walk(role_dir):
+            for name in names:
+                role_file = os.path.join(directory, name)
+                files.add(role_file)
+                if name.endswith((".yml", ".yaml")) and ("tasks" in directory or "handlers" in directory):
+                    pending.append(role_file)
+for directory in (os.path.join(root, "group_vars"),):
+    for base, _, names in os.walk(directory):
+        files.update(os.path.join(base, name) for name in names)
+digest = hashlib.sha256()
+digest.update(version.encode())
+digest.update(extra_vars.encode())
+for path in sorted(files):
+    relative_path = os.path.relpath(path, root)
+    if relative_path == "roles/container_app/templates/application.env.j2" and application_id != "habitsync":
+        continue
+    digest.update(relative_path.encode())
+    with open(path, "rb") as source:
+        digest.update(source.read())
+print(digest.hexdigest())
+PY
+)"
+    APPLICATION_COMPLETE="$(install_state_get "default_application_${APPLICATION_ID}_complete")" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+    APPLICATION_APPLIED_SIGNATURE="$(install_state_get "default_application_${APPLICATION_ID}_signature")" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+    APPLICATION_TASK_LISTING="$(sudo "$ANSIBLE_PLAYBOOK" -i inventory.ini "playbooks/$APPLICATION_PLAYBOOK" --list-tasks --extra-vars "$BOOTSTRAP_EXTRA_VARS" 2>&1)" || fail "could not calculate task progress for $APPLICATION_PLAYBOOK."
+    APPLICATION_TASK_COUNT="$(awk '/^      .*TAGS: / { count++ } END { print count + 0 }' <<<"$APPLICATION_TASK_LISTING")"
+    ((APPLICATION_TASK_COUNT > 0)) || fail "could not calculate task progress for $APPLICATION_PLAYBOOK."
+
+    if sudo python3 "$PROJECT_ROOT/tools/installer_recovery.py" should-skip \
+      "$APPLICATION_COMPLETE" "$APPLICATION_APPLIED_SIGNATURE" "$APPLICATION_SIGNATURE" \
+      "$APPLICATION_ID" "$APPLICATION_EXPECTED_VERSION"; then
+      printf '%s was already completed; skipping.\n' "$APPLICATION_ID"
+    elif [[ "$APPLICATION_APPLIED_SIGNATURE" != v2:* ]] && application_status_is_complete "$APPLICATION_ID" "$APPLICATION_EXPECTED_VERSION"; then
+      # Upgrade legacy bundle-level progress using the status record written
+      # only after this application's successful health check.
+      install_state_set "default_application_${APPLICATION_ID}_complete" true || fail "$APPLICATION_ID completed previously, but progress could not be saved."
+      install_state_set "default_application_${APPLICATION_ID}_signature" "$APPLICATION_SIGNATURE" || fail "$APPLICATION_ID completed previously, but progress could not be saved."
+      printf '%s already has a passing installed status; recording it as complete and skipping.\n' "$APPLICATION_ID"
+    else
+      TASK_PROGRESS_OFFSET="$DEFAULT_TASK_OFFSET"
+      TASK_PROGRESS_TOTAL="$DEFAULT_TASK_TOTAL"
+      if run_playbook_with_progress "playbooks/$APPLICATION_PLAYBOOK" "$BOOTSTRAP_EXTRA_VARS" "${ANSIBLE_VAULT_ARGS[@]}"; then
+        install_state_set "default_application_${APPLICATION_ID}_complete" true || fail "$APPLICATION_ID setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+        install_state_set "default_application_${APPLICATION_ID}_signature" "$APPLICATION_SIGNATURE" || fail "$APPLICATION_ID setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+      else
+        printf 'Application playbook failed for %s; continuing to check independent applications.\n' "$APPLICATION_ID" >&2
+        APPLICATION_FAILURES+=("$APPLICATION_ID")
+      fi
+    fi
+    DEFAULT_TASK_OFFSET=$((DEFAULT_TASK_OFFSET + APPLICATION_TASK_COUNT))
+  done
+  unset TASK_PROGRESS_OFFSET TASK_PROGRESS_TOTAL
+  ((${#APPLICATION_FAILURES[@]} == 0)) || fail "application playbooks failed for: ${APPLICATION_FAILURES[*]}. Rerun the installer after resolving the reported issue."
+  install_state_set default_playbook_complete true || fail "default application setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+  install_state_set default_playbook_applied_signature "$DEFAULT_PLAYBOOK_SIGNATURE" || fail "default application setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+
+WELCOME_PLAYBOOK_COMPLETE="$(install_state_get welcome_playbook_complete)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+WELCOME_PLAYBOOK_SIGNATURE="$(printf '%s\n%s' "$AGGREGARE_VERSION" "$PROJECT_ROOT/docs/deployment/aggregare-server.md" | sha256sum | awk '{print $1}')"
+WELCOME_PLAYBOOK_APPLIED_SIGNATURE="$(install_state_get welcome_playbook_applied_signature)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
+if [[ "$WELCOME_PLAYBOOK_COMPLETE" != true || "$WELCOME_PLAYBOOK_APPLIED_SIGNATURE" != "$WELCOME_PLAYBOOK_SIGNATURE" ]]; then
+  run_playbook_with_progress playbooks/welcome.yml "$WELCOME_EXTRA_VARS"
+  install_state_set welcome_playbook_complete true || fail "welcome playbook completed, but progress could not be saved to $INSTALL_STATE_FILE."
+  install_state_set welcome_playbook_applied_signature "$WELCOME_PLAYBOOK_SIGNATURE" || fail "welcome playbook completed, but progress could not be saved to $INSTALL_STATE_FILE."
+else
+  printf 'Welcome playbook already completed; skipping.\n'
+fi
+
+printf '\nAggregare default application bundle installation finished.\n'
 printf 'The Aggregare login banner is installed; log out and back in to see it.\n'
 if [[ "$LAN_ACCESS" == true ]]; then
-  printf 'Open Memos on the LAN at http://%s:5230/\n' "$LAN_ADDRESS"
+  printf 'User-facing applications on the LAN:\n'
+  printf '  Open WebUI: http://%s:8080/\n  Memos:      http://%s:5230/\n  HabitSync:  http://%s:6842/\n  Vikunja:    http://%s:3456/\n' "$LAN_ADDRESS" "$LAN_ADDRESS" "$LAN_ADDRESS" "$LAN_ADDRESS"
   printf 'If UFW blocks LAN connections, add this LAN-scoped rule:\n'
-  printf 'sudo ufw allow from %s to %s port 5230 proto tcp\n' "$LAN_SUBNET" "$LAN_ADDRESS"
+  for port in 8080 5230 6842 3456; do
+    printf 'sudo ufw allow from %s to %s port %s proto tcp\n' "$LAN_SUBNET" "$LAN_ADDRESS" "$port"
+  done
   printf 'Do not configure router port forwarding for this application.\n'
 else
-  printf 'Memos is local-only at http://127.0.0.1:5230/.\n'
+  printf 'User-facing applications on this server:\n'
+  printf '  Open WebUI: http://127.0.0.1:8080/\n  Memos:      http://127.0.0.1:5230/\n  HabitSync:  http://127.0.0.1:6842/\n  Vikunja:    http://127.0.0.1:3456/\n'
 fi
+printf 'Ysparr API: http://127.0.0.1:8000/v1. Apmatia core API: http://127.0.0.1:8001 (loopback only).\n'
+printf 'Open WebUI sign-up remains enabled for first use: create the first administrator account in the browser, then immediately disable sign-up in Admin Panel > Settings. Until then, allow access only from trusted clients.\n'
+printf 'Open WebUI is preconfigured to use Ysparr only. If models do not appear immediately, reopen the model selector or save the Ysparr connection in Admin Panel > Settings > Connections, then refresh the page.\n'
+printf 'On a fresh install, Apmatia first-user credentials are stored root-only at /etc/aggregare/apmatia-credentials.json; retrieve with sudo cat and keep a protected backup.\n'
+printf 'Apmatia publishes its five starter agents to Ysparr during fresh first-user setup. Ysparr continues to serve real upstream models if Apmatia is temporarily unavailable.\n'
+printf 'For a redacted AI-chat status report, run: sudo ./tools/aggregare-ai-chat-diagnose\n'
+printf 'Lifecycle, network, backup/restore, and VM smoke-check steps: docs/deployment/aggregare-ai-chat-operations.md\n'
+printf 'HabitSync local login is stored root-only at /etc/aggregare/habitsync-credentials; retrieve it with sudo cat and rotate it after first sign-in.\n'
+printf 'AI chat upstream: %s (checked at /v1/models). Reapply the default playbook to update it; the value is saved in /etc/aggregare/ysparr-upstream.json.\n' "$LLAMA_CPP_URL"

@@ -83,7 +83,7 @@
     path: /var/lib/aggregare/phase-2.5/caddy-data/caddy/pki/authorities/local/root.crt
   register: phase25_caddy_root
   retries: 30
-  delay: 2
+  delay: 20
   until: phase25_caddy_root.stat.exists
 
 - name: Export the dev-only public Caddy root certificate

@@ -1,0 +1,42 @@
+---
+- name: Install or remove Open WebUI
+  hosts: aggregare
+  become: true
+  vars:
+    application_id: open-webui
+    application_version: '0.11.4'
+    application_image: ghcr.io/open-webui/open-webui:v0.11.4
+    application_host_port: 8080
+    application_container_port: 8080
+    # Open WebUI shares the host network so it can reach Ysparr on loopback;
+    # only its own HTTP listener follows Aggregare's explicit bind policy.
+    application_host_network: true
+    application_unit_after: [ysparr.service]
+    application_unit_wants: [ysparr.service]
+    application_data_path: /var/lib/aggregare/open-webui
+    application_container_data_path: /app/backend/data
+    application_environment:
+      ENABLE_OPENAI_API: 'true'
+      OPENAI_API_BASE_URL: "http://{{ ysparr_host | default('127.0.0.1') }}:{{ ysparr_port | default(8000) }}/v1"
+      ENABLE_OLLAMA_API: 'false'
+      ENABLE_DIRECT_CONNECTIONS: 'false'
+      ENABLE_DIRECT_INTEGRATIONS: 'false'
+      ENABLE_CODE_EXECUTION: 'false'
+      ENABLE_CODE_INTERPRETER: 'false'
+      ENABLE_MEMORIES: 'false'
+      ENABLE_SUBAGENTS: 'false'
+      ENABLE_AUTOMATIONS: 'false'
+      ENABLE_WEB_SEARCH: 'false'
+      ENABLE_IMAGE_GENERATION: 'false'
+      ENABLE_GOOGLE_DRIVE_INTEGRATION: 'false'
+      ENABLE_ONEDRIVE_INTEGRATION: 'false'
+      WEBUI_AUTH: 'true'
+      ENABLE_SIGNUP: 'true'
+      DEFAULT_USER_ROLE: 'pending'
+      HOST: "{{ application_bind_address | default('127.0.0.1') }}"
+      PORT: '8080'
+    application_health_path: /health
+  tasks:
+  - name: Apply the shared OCI application role
+    ansible.builtin.import_role:
+      name: container_app

@@ -7,6 +7,9 @@
     python_app_source: https://github.com/azwarners/OpenIPE.git
     python_app_ref: da7842181cca04c05ebbc19cef9cf50759e709b7
     python_app_module: openipe
+    python_app_generated_source_files:
+      - src/openipe.egg-info/PKG-INFO
+      - src/openipe.egg-info/SOURCES.txt
   tasks:
   - name: Install OpenIPE from its pinned upstream source
     ansible.builtin.import_role:

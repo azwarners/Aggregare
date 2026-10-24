@@ -34,14 +34,15 @@
         "system:python3",
         "system:python3-venv"
       ],
-      "reference": "264bc9c10ea3efdc21059767b58f20c4b07897cb"
+      "reference": "aa2e12f7ee51f9d9d6bb0dc2b17708e7c7b94a98"
     }
   ],
   "platforms": [
     {
       "name": "ubuntu",
       "versions": [
-        "24.04"
+        "24.04",
+        "26.04"
       ],
       "architectures": [
         "amd64",
@@ -77,6 +78,12 @@
       "required": true
     },
     {
+      "name": "ysparr_apmatia_public_base_url",
+      "type": "string",
+      "required": false,
+      "description": "Apmatia service URL used to discover explicitly published prompt-only agents."
+    },
+    {
       "name": "ysparr_upstream_api_key",
       "type": "string",
       "required": false,
@@ -87,6 +94,7 @@
     "ansible-vault:ysparr_upstream_api_key"
   ],
   "integrations": [
-    "openai-compatible-http"
+    "openai-compatible-http",
+    "apmatia-public-agent-catalog"
   ]
 }

@@ -1,0 +1,34 @@
+{
+  "id": "ai-chat",
+  "display_name": "AI chat stack",
+  "description": "Additive AI chat stack: Open WebUI, Ysparr relay, and Apmatia's published prompt-only starter agents.",
+  "applications": ["ysparr", "apmatia", "open-webui"],
+  "dependencies": {
+    "ysparr": ["system:git", "system:python3", "system:python3-venv"],
+    "apmatia": ["system:git", "system:python3", "system:python3-venv", "system:openssl"],
+    "open-webui": ["system:podman>=4.9", "application:ysparr"]
+  },
+  "entry_point": "ansible/playbooks/ai-chat.yml",
+  "application_order": ["ysparr", "apmatia", "open-webui"],
+  "persistent_paths": [
+    "/var/lib/ysparr",
+    "/var/lib/aggregare/open-webui",
+    "/var/lib/apmatia/app",
+    "/var/lib/apmatia/data",
+    "/var/lib/apmatia/config",
+    "/etc/aggregare/apmatia-credentials.json",
+    "/etc/aggregare/apmatia-bootstrap-state.json",
+    "/opt/aggregare/apmatia",
+    "/opt/aggregare/venvs/apmatia"
+  ],
+  "upstream_pins": {
+    "open-webui-image": "ghcr.io/open-webui/open-webui:v0.11.4",
+    "ysparr-git": "aa2e12f7ee51f9d9d6bb0dc2b17708e7c7b94a98",
+    "apmatia-git": "bddc27cb369579cc5f912a556aab1612e2034482"
+  },
+  "notes": [
+    "Applications retain independent playbooks.",
+    "Ysparr reads published Apmatia agents when Apmatia is available and continues to expose upstream models during Apmatia outages.",
+    "Agent prompts are sent as system prompts; this integration does not provide Apmatia tools or memory to Ysparr."
+  ]
+}

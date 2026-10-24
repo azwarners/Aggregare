@@ -139,7 +139,7 @@
         status_code: 200
       register: comfyui_health
       retries: 24
-      delay: 5
+      delay: 20
       until: comfyui_health.status == 200
 
     - name: Write machine-readable ComfyUI status
