@@ -1,13 +1,28 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aggregare.invalid/schemas/v1/identity-config.schema.json",
-  "title": "Aggregare identity selection (v1)",
-  "description": "Non-secret identity provider selection persisted by install.sh.",
-  "type": "object",
-  "required": ["schema_version", "identity_provider"],
-  "properties": {
-    "schema_version": { "const": 1 },
-    "identity_provider": { "enum": ["kanidm", "external_oidc", "none"] }
-  },
-  "additionalProperties": false
+  "title": "Aggregare identity configuration",
+  "description": "Non-secret, environment-local identity selection and optional Kanidm endpoint.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["schema_version", "identity_provider"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "identity_provider": { "enum": ["kanidm", "external_oidc", "none"] }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["schema_version", "identity_provider", "identity_domain", "identity_origin"],
+      "properties": {
+        "schema_version": { "const": 2 },
+        "identity_provider": { "const": "kanidm" },
+        "identity_domain": { "type": "string", "minLength": 1 },
+        "identity_origin": { "type": "string", "format": "uri", "pattern": "^https://" }
+      },
+      "additionalProperties": false
+    }
+  ]
 }

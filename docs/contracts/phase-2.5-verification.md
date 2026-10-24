@@ -1,5 +1,18 @@
 # Phase 2.5 live verification record
 
+## 2026-10-23: issue #17 pinned Kanidm deployment
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Automated tests on development host | Passed | `python3 -m unittest discover -s tests -v` (29 tests). Includes origin-only DNS/TLS preflight behavior, endpoint persistence schema, immutable established domains, and no mutation on failed preflight. |
+| Ansible syntax and saved-provider reapplication on development host | Passed | Identity playbook syntax check passed. Reapplied the host's saved `none` choice: 7 tasks ok, 0 changed, 19 skipped; Kanidm tasks were skipped. |
+| Local validation | Passed | `bash -n install.sh`, Python compilation of both identity tools, Ansible playbook syntax check, and `git diff --check`. |
+| Fresh Kanidm service deployment and health check | Not run | The dev host has no selected Kanidm FQDN/origin or Kanidm TLS material. No hostname or certificate values were guessed. |
+| DNS, certificate, proxy/router/firewall changes | None | These remain administrator-managed prerequisites. No production or site network configuration was changed. |
+
+This record contains outcomes only and excludes credentials, private IP
+addresses, certificate private keys, and CA private material.
+
 ## 2026-10-13: issue #15 identity DNS and TLS preflight hardening
 
 | Check | Result | Evidence |

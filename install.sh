@@ -11,6 +11,11 @@ IDENTITY_CONFIG_FILE="/etc/aggregare/identity.json"
 INSTALL_STATE_FILE="/var/lib/aggregare/installer-state.json"
 IDENTITY_PROVIDER=""
 IDENTITY_PROVIDER_UPDATE=false
+IDENTITY_DOMAIN=""
+IDENTITY_ORIGIN=""
+KANIDM_TLS_CHAIN=""
+KANIDM_TLS_KEY=""
+IDENTITY_CA_FILE=""
 LLAMA_CPP_URL=""
 LAN_ACCESS=""
 LEGACY_RESUME=false
@@ -23,6 +28,31 @@ while (($#)); do
       IDENTITY_PROVIDER_UPDATE=true
       shift 2
       ;;
+    --identity-domain)
+      (($# >= 2)) || { printf 'Installer stopped: --identity-domain needs an administrator-selected FQDN.\n' >&2; exit 2; }
+      IDENTITY_DOMAIN="$2"
+      shift 2
+      ;;
+    --identity-origin)
+      (($# >= 2)) || { printf 'Installer stopped: --identity-origin needs an HTTPS origin.\n' >&2; exit 2; }
+      IDENTITY_ORIGIN="$2"
+      shift 2
+      ;;
+    --kanidm-tls-chain)
+      (($# >= 2)) || { printf 'Installer stopped: --kanidm-tls-chain needs a PEM certificate-chain file path.\n' >&2; exit 2; }
+      KANIDM_TLS_CHAIN="$2"
+      shift 2
+      ;;
+    --kanidm-tls-key)
+      (($# >= 2)) || { printf 'Installer stopped: --kanidm-tls-key needs a PEM private-key file path.\n' >&2; exit 2; }
+      KANIDM_TLS_KEY="$2"
+      shift 2
+      ;;
+    --identity-ca-file)
+      (($# >= 2)) || { printf 'Installer stopped: --identity-ca-file needs a PEM CA bundle file path.\n' >&2; exit 2; }
+      IDENTITY_CA_FILE="$2"
+      shift 2
+      ;;
     --llama-cpp-url)
       (($# >= 2)) || { printf 'Installer stopped: --llama-cpp-url needs an http:// or https:// OpenAI-compatible server base URL.\n' >&2; exit 2; }
       LLAMA_CPP_URL="$2"
@@ -33,7 +63,7 @@ while (($#)); do
       shift
       ;;
     --help|-h)
-      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--llama-cpp-url URL] [--reset-progress]\n'
+      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--identity-domain FQDN --identity-origin HTTPS_URL --kanidm-tls-chain FILE --kanidm-tls-key FILE] [--identity-ca-file FILE] [--llama-cpp-url URL] [--reset-progress]\n'
       exit 0
       ;;
     *) printf 'Installer stopped: unknown option: %s\n' "$1" >&2; exit 2 ;;
@@ -144,6 +174,31 @@ select_identity_provider() {
   fi
   case "$IDENTITY_PROVIDER" in kanidm|external_oidc|none) ;; *) fail "invalid identity provider '$IDENTITY_PROVIDER'; choose kanidm, external_oidc, or none." ;; esac
   install_state_set identity_provider "$IDENTITY_PROVIDER" || fail "could not save installer progress to $INSTALL_STATE_FILE."
+}
+
+select_kanidm_endpoint() {
+  [[ "$IDENTITY_PROVIDER" == kanidm ]] || return 0
+  local saved_domain="" saved_origin="" saved_chain="" saved_key=""
+  if [[ -r "$IDENTITY_CONFIG_FILE" ]]; then
+    saved_domain="$(python3 "$PROJECT_ROOT/tools/aggregare-identity-config" get-field identity_domain "$IDENTITY_CONFIG_FILE")" || fail "saved identity configuration is invalid; review $IDENTITY_CONFIG_FILE."
+    saved_origin="$(python3 "$PROJECT_ROOT/tools/aggregare-identity-config" get-field identity_origin "$IDENTITY_CONFIG_FILE")" || fail "saved identity configuration is invalid; review $IDENTITY_CONFIG_FILE."
+  fi
+  saved_chain="$(install_state_get kanidm_tls_chain)" || fail "could not read saved installer progress."
+  saved_key="$(install_state_get kanidm_tls_key)" || fail "could not read saved installer progress."
+  IDENTITY_DOMAIN="${IDENTITY_DOMAIN:-$saved_domain}"
+  IDENTITY_ORIGIN="${IDENTITY_ORIGIN:-$saved_origin}"
+  KANIDM_TLS_CHAIN="${KANIDM_TLS_CHAIN:-$saved_chain}"
+  KANIDM_TLS_KEY="${KANIDM_TLS_KEY:-$saved_key}"
+  [[ -n "$IDENTITY_DOMAIN" ]] || { read -r -p 'Administrator-selected Kanidm identity FQDN (for example, id.home.arpa): ' IDENTITY_DOMAIN; }
+  [[ -n "$IDENTITY_ORIGIN" ]] || { read -r -p 'Kanidm trusted HTTPS origin (for example, https://id.home.arpa): ' IDENTITY_ORIGIN; }
+  [[ -n "$KANIDM_TLS_CHAIN" ]] || { read -r -p 'PEM certificate-chain file path on this Ansible controller: ' KANIDM_TLS_CHAIN; }
+  [[ -n "$KANIDM_TLS_KEY" ]] || { read -r -p 'Matching PEM private-key file path on this Ansible controller: ' KANIDM_TLS_KEY; }
+  [[ -f "$KANIDM_TLS_CHAIN" && -r "$KANIDM_TLS_CHAIN" ]] || fail "the Kanidm certificate chain must be a readable file on this controller."
+  [[ -f "$KANIDM_TLS_KEY" && -r "$KANIDM_TLS_KEY" ]] || fail "the Kanidm private key must be a readable file on this controller."
+  [[ "$IDENTITY_DOMAIN" == "$saved_domain" || -z "$saved_domain" ]] || fail "the saved Kanidm identity domain cannot be changed in place; an identity-domain migration is required."
+  [[ "$IDENTITY_ORIGIN" == "$saved_origin" || -z "$saved_origin" ]] || fail "the saved Kanidm origin cannot be changed in place; an identity-domain migration is required."
+  install_state_set kanidm_tls_chain "$KANIDM_TLS_CHAIN" || fail "could not save installer progress."
+  install_state_set kanidm_tls_key "$KANIDM_TLS_KEY" || fail "could not save installer progress."
 }
 
 select_llama_cpp_endpoint() {
@@ -325,6 +380,7 @@ fi
 
 confirm_host_time
 select_identity_provider
+select_kanidm_endpoint
 select_llama_cpp_endpoint
 
 printf '\nAggregare Server v%s bootstrap\n' "$AGGREGARE_VERSION"
@@ -462,11 +518,27 @@ run_playbook_with_progress() {
 }
 
 IDENTITY_CONFIG_COMPLETE="$(install_state_get identity_config_playbook_complete)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
-IDENTITY_CONFIG_SIGNATURE="$(printf '%s\n%s' "$AGGREGARE_VERSION" "$IDENTITY_PROVIDER" | sha256sum | awk '{print $1}')"
+IDENTITY_CONFIG_EXTRA_VARS="$(python3 - "$IDENTITY_PROVIDER" "$IDENTITY_DOMAIN" "$IDENTITY_ORIGIN" "$KANIDM_TLS_CHAIN" "$KANIDM_TLS_KEY" "$IDENTITY_CA_FILE" "$IDENTITY_PROVIDER_UPDATE" <<'PY'
+import json
+import sys
+provider, domain, origin, chain, key, cafile, update = sys.argv[1:]
+values = {"aggregare_identity_provider": provider,
+          "aggregare_identity_provider_update": update == "true"}
+if provider == "kanidm":
+    values.update({"aggregare_identity_domain": domain,
+                   "aggregare_identity_origin": origin,
+                   "aggregare_kanidm_tls_chain_source": chain,
+                   "aggregare_kanidm_tls_key_source": key})
+    if cafile:
+        values["identity_preflight_cafile"] = cafile
+print(json.dumps(values))
+PY
+)"
+IDENTITY_CONFIG_SIGNATURE="$(printf '%s\n%s' "$AGGREGARE_VERSION" "$IDENTITY_CONFIG_EXTRA_VARS" | sha256sum | awk '{print $1}')"
 IDENTITY_CONFIG_APPLIED_SIGNATURE="$(install_state_get identity_config_applied_signature)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
 if [[ "$IDENTITY_PROVIDER_UPDATE" == true || "$IDENTITY_CONFIG_COMPLETE" != true || "$IDENTITY_CONFIG_APPLIED_SIGNATURE" != "$IDENTITY_CONFIG_SIGNATURE" ]]; then
   run_playbook_with_progress playbooks/phase25-identity-config.yml \
-    "{\"aggregare_identity_provider\":\"$IDENTITY_PROVIDER\",\"aggregare_identity_provider_update\":$IDENTITY_PROVIDER_UPDATE}"
+    "$IDENTITY_CONFIG_EXTRA_VARS"
   install_state_set identity_config_playbook_complete true || fail "identity setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
   install_state_set identity_config_applied_signature "$IDENTITY_CONFIG_SIGNATURE" || fail "identity setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
 else

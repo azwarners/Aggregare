@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read and write Aggregare's versioned, non-secret identity selection."""
+"""Read Aggregare's versioned, non-secret identity configuration."""
 import json
 from pathlib import Path
 import sys
@@ -12,10 +12,14 @@ def load(path):
         data = json.loads(Path(path).read_text())
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"cannot read identity config: {exc}") from exc
-    if (not isinstance(data, dict) or data.get("schema_version") != 1
-            or data.get("identity_provider") not in PROVIDERS
-            or set(data) != {"schema_version", "identity_provider"}):
-        raise ValueError("expected schema_version 1 and identity_provider kanidm, external_oidc, or none")
+    if not isinstance(data, dict) or data.get("identity_provider") not in PROVIDERS:
+        raise ValueError("identity config must contain a supported identity_provider")
+    if data.get("schema_version") == 1 and set(data) == {"schema_version", "identity_provider"}:
+        return data
+    expected = {"schema_version", "identity_provider", "identity_domain", "identity_origin"}
+    if (data.get("schema_version") != 2 or data.get("identity_provider") != "kanidm"
+            or set(data) != expected or not data["identity_domain"] or not data["identity_origin"]):
+        raise ValueError("expected a valid version 1 identity selection or version 2 Kanidm domain and origin")
     return data
 
 
@@ -27,7 +31,17 @@ def main(argv):
             print(f"aggregare-identity-config: {exc}", file=sys.stderr)
             return 2
         return 0
-    print("Usage: aggregare-identity-config get-provider FILE", file=sys.stderr)
+    if len(argv) == 4 and argv[1] == "get-field":
+        try:
+            data = load(argv[3])
+            if argv[2] not in data:
+                return 0
+            print(data[argv[2]])
+        except ValueError as exc:
+            print(f"aggregare-identity-config: {exc}", file=sys.stderr)
+            return 2
+        return 0
+    print("Usage: aggregare-identity-config get-provider FILE | get-field FIELD FILE", file=sys.stderr)
     return 2
 
 

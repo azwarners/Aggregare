@@ -47,6 +47,26 @@ The installer always installs the default bundle. It asks you to confirm host
 time, identity configuration, and whether the user-facing applications should
 be reachable from the private LAN.
 
+When you select `kanidm`, the installer collects a stable identity FQDN and
+HTTPS origin plus the certificate-chain and matching private-key paths on the
+Ansible controller. It runs DNS and TLS preflight before writing the identity
+configuration or deploying Kanidm. Reapplications use the saved endpoint and
+reject ordinary attempts to change it. `external_oidc` and `none` do not ask
+for Kanidm-specific settings.
+
+Before selecting Kanidm, an administrator must configure the chosen DNS name
+to resolve from the server and intended clients, arrange a trusted certificate
+for the hostname, and route HTTPS from the selected origin to the host's local
+Kanidm listener at `127.0.0.1:8443`. For private LANs, a name beneath
+`home.arpa` can use local DNS and a private CA; install that CA's public root in
+the host/browser/client trust stores and provide its path with
+`--identity-ca-file` when running the installer. For a name under a registered
+domain, a publicly trusted certificate can be used without exposing the
+service publicly. DNS, certificate issuance/renewal, proxy/router/firewall
+rules, and trust-store distribution remain administrator-managed. Validate
+the selected origin from the host and each required client network before
+enrolling accounts.
+
 During installation, Aggregare displays the server's local time, UTC time,
 timezone, and network time synchronization status. Confirm that they are
 correct before application deployment. If the timezone is wrong, enter its
