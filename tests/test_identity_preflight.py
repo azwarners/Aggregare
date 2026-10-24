@@ -18,6 +18,15 @@ SPEC.loader.exec_module(preflight)
 
 
 class IdentityPreflightTests(unittest.TestCase):
+    def test_origin_only_mode_checks_dns_and_tls_without_discovery(self):
+        with (patch.object(preflight, "resolve", return_value=["192.0.2.44"]),
+              patch.object(preflight, "check_tls", return_value="TLSv1.3"),
+              patch.object(preflight, "fetch_discovery") as discovery):
+            checks = preflight.run_checks("https://id.example.test", None, None)
+        self.assertEqual([check["name"] for check in checks], ["origin_dns", "origin_tls"])
+        self.assertTrue(all(check["status"] == "passed" for check in checks))
+        discovery.assert_not_called()
+
     def test_success_checks_dns_tls_and_exact_discovery_issuer(self):
         issuer = "https://id.example.test/oauth2"
         discovery = {"issuer": issuer, "authorization_endpoint": "https://id.example.test/authorize",

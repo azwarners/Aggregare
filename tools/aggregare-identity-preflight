@@ -71,10 +71,12 @@ def fetch_discovery(issuer, cafile):
 
 def run_checks(origin, issuer, cafile):
     origin_url = validate_url(origin, "origin")
-    issuer_url = validate_url(issuer, "issuer")
     checks = []
-    for label, host, port in (("origin", origin_url.hostname, origin_url.port or 443),
-                              ("issuer", issuer_url.hostname, issuer_url.port or 443)):
+    hosts = [("origin", origin_url.hostname, origin_url.port or 443)]
+    if issuer:
+        issuer_url = validate_url(issuer, "issuer")
+        hosts.append(("issuer", issuer_url.hostname, issuer_url.port or 443))
+    for label, host, port in hosts:
         try:
             addresses = resolve(host)
             checks.append({"name": f"{label}_dns", "status": "passed", "host": host, "addresses": addresses})
@@ -88,7 +90,7 @@ def run_checks(origin, issuer, cafile):
         except (OSError, ssl.SSLError, ValueError) as exc:
             checks.append({"name": f"{label}_tls", "status": "failed", "host": host, "port": port,
                            "detail": str(exc)})
-    if any(check["name"] == "issuer_tls" and check["status"] == "passed" for check in checks):
+    if issuer and any(check["name"] == "issuer_tls" and check["status"] == "passed" for check in checks):
         try:
             discovery, endpoints = fetch_discovery(issuer, cafile)
             checks.append({"name": "issuer_discovery", "status": "passed", "url": discovery,
@@ -141,8 +143,11 @@ def make_report(origin, issuer, cafile, containers):
     contexts.extend({"name": container,
                      "checks": check_context(container, origin, issuer, cafile)} for container in containers)
     passed = all(check["status"] == "passed" for context in contexts for check in context["checks"])
-    return {"schema_version": "v1", "status": "passed" if passed else "failed",
-            "origin": origin, "issuer": issuer, "contexts": contexts}
+    report = {"schema_version": "v1", "status": "passed" if passed else "failed",
+              "origin": origin, "contexts": contexts}
+    if issuer:
+        report["issuer"] = issuer
+    return report
 
 
 def render_text(report):
@@ -157,7 +162,7 @@ def render_text(report):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--origin", required=True, help="trusted HTTPS identity origin")
-    parser.add_argument("--issuer", required=True, help="canonical HTTPS OIDC issuer URL")
+    parser.add_argument("--issuer", help="canonical HTTPS OIDC issuer URL (optional before provider setup)")
     parser.add_argument("--cafile", help="optional PEM CA bundle for a private CA")
     parser.add_argument("--container", action="append", default=[], metavar="NAME",
                         help="also check an explicitly named Podman container (repeatable; requires python3 there)")
@@ -167,7 +172,8 @@ def main(argv=None):
         parser.error("--cafile must name a readable CA bundle file")
     try:
         validate_url(args.origin, "origin")
-        validate_url(args.issuer, "issuer")
+        if args.issuer:
+            validate_url(args.issuer, "issuer")
     except ValueError as exc:
         parser.error(str(exc))
     report = make_report(args.origin, args.issuer, args.cafile, args.container)

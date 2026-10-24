@@ -1,81 +1,242 @@
 ---
-- name: Validate and persist the optional identity provider selection
+- name: Persist identity selection and deploy Kanidm when selected
   hosts: aggregare
   gather_facts: false
+  become: true
   vars:
     aggregare_identity_config_file: /etc/aggregare/identity.json
+    aggregare_kanidm_version: 1.11.2
+    aggregare_kanidm_image: "docker.io/kanidm/server:{{ aggregare_kanidm_version }}"
+    aggregare_kanidm_data_dir: /var/lib/aggregare/kanidm
+    aggregare_kanidm_config_dir: /etc/aggregare/kanidm
+    aggregare_kanidm_tls_chain_target: "{{ aggregare_kanidm_data_dir }}/chain.pem"
+    aggregare_kanidm_tls_key_target: "{{ aggregare_kanidm_data_dir }}/key.pem"
+    aggregare_kanidm_preflight_tool: "{{ playbook_dir }}/../../tools/aggregare-identity-preflight"
   tasks:
-    - name: Inspect the persistent configuration directory
-      ansible.builtin.stat:
-        path: "{{ aggregare_identity_config_file | dirname }}"
-      register: aggregare_identity_config_directory_stat
-
-    - name: Create the persistent configuration directory when absent
-      ansible.builtin.file:
-        path: "{{ aggregare_identity_config_file | dirname }}"
-        state: directory
-        mode: "0755"
-      when: not aggregare_identity_config_directory_stat.stat.exists
-
-    - name: Inspect the persistent identity configuration
+    - name: Inspect persistent identity configuration
       ansible.builtin.stat:
         path: "{{ aggregare_identity_config_file }}"
       register: aggregare_identity_config_stat
 
-    - name: Read the persistent identity configuration
+    - name: Read persistent identity configuration
       ansible.builtin.slurp:
         src: "{{ aggregare_identity_config_file }}"
       register: aggregare_identity_config_slurp
       when: aggregare_identity_config_stat.stat.exists
 
-    - name: Parse the persistent identity configuration
+    - name: Parse persistent identity configuration
       ansible.builtin.set_fact:
         aggregare_identity_saved_config: "{{ aggregare_identity_config_slurp.content | b64decode | from_json }}"
       when: aggregare_identity_config_stat.stat.exists
 
-    - name: Validate the persistent identity configuration
+    - name: Validate existing identity configuration
       ansible.builtin.assert:
         that:
           - aggregare_identity_saved_config is mapping
-          - aggregare_identity_saved_config.schema_version | default(0) == 1
+          - aggregare_identity_saved_config.schema_version | default(0) in [1, 2]
           - aggregare_identity_saved_config.identity_provider | default('') in ['kanidm', 'external_oidc', 'none']
-          - aggregare_identity_saved_config.keys() | list | sort == ['identity_provider', 'schema_version']
-        fail_msg: "{{ aggregare_identity_config_file }} must be version 1 with identity_provider kanidm, external_oidc, or none."
+          - >-
+            (aggregare_identity_saved_config.schema_version == 1 and
+             aggregare_identity_saved_config.keys() | list | sort == ['identity_provider', 'schema_version']) or
+            (aggregare_identity_saved_config.schema_version == 2 and
+             aggregare_identity_saved_config.identity_provider == 'kanidm' and
+             aggregare_identity_saved_config.identity_domain is string and
+             aggregare_identity_saved_config.identity_origin is string and
+             aggregare_identity_saved_config.keys() | list | sort ==
+             ['identity_domain', 'identity_origin', 'identity_provider', 'schema_version'])
+        fail_msg: "{{ aggregare_identity_config_file }} is invalid; preserve a backup and repair it before applying identity configuration."
       when: aggregare_identity_config_stat.stat.exists
 
-    - name: Require a provider selection on first configuration
+    - name: Require an explicit provider for a new identity configuration
       ansible.builtin.assert:
         that:
           - aggregare_identity_provider is defined
           - aggregare_identity_provider in ['kanidm', 'external_oidc', 'none']
-        fail_msg: Set aggregare_identity_provider to kanidm, external_oidc, or none; no persistent identity selection exists yet.
+        fail_msg: Set aggregare_identity_provider to kanidm, external_oidc, or none.
       when: not aggregare_identity_config_stat.stat.exists
 
-    - name: Validate a requested provider selection
-      ansible.builtin.assert:
-        that:
-          - aggregare_identity_provider in ['kanidm', 'external_oidc', 'none']
-        fail_msg: aggregare_identity_provider must be kanidm, external_oidc, or none.
-      when: aggregare_identity_provider is defined
+    - name: Resolve selected identity provider
+      ansible.builtin.set_fact:
+        aggregare_identity_provider_effective: "{{ aggregare_identity_provider if aggregare_identity_provider is defined else aggregare_identity_saved_config.identity_provider }}"
 
-    - name: Reject a requested selection that conflicts with persistent configuration
+    - name: Reject an ordinary provider change
       ansible.builtin.assert:
         that:
           - aggregare_identity_provider == aggregare_identity_saved_config.identity_provider or aggregare_identity_provider_update | default(false) | bool
         fail_msg: "Requested identity provider conflicts with {{ aggregare_identity_config_file }}. Set aggregare_identity_provider_update=true to intentionally replace the saved choice."
       when: aggregare_identity_config_stat.stat.exists and aggregare_identity_provider is defined
 
-    - name: Choose the requested or saved provider
-      ansible.builtin.set_fact:
-        aggregare_identity_provider_effective: "{{ aggregare_identity_provider if aggregare_identity_provider is defined else aggregare_identity_saved_config.identity_provider }}"
+    - name: Validate the selected Kanidm domain and HTTPS origin
+      ansible.builtin.assert:
+        that:
+          - aggregare_identity_domain is defined
+          - aggregare_identity_origin is defined
+          - aggregare_identity_domain is match('^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$')
+          - aggregare_identity_origin is match('^https://[^/]+$')
+          - "(aggregare_identity_origin | regex_replace('^https://', '') | regex_replace(':([0-9]+)$', '') | lower) == (aggregare_identity_domain | lower) or (aggregare_identity_origin | regex_replace('^https://', '') | regex_replace(':([0-9]+)$', '') | lower).endswith('.' ~ (aggregare_identity_domain | lower))"
+          - aggregare_kanidm_tls_chain_source is defined
+          - aggregare_kanidm_tls_key_source is defined
+          - aggregare_kanidm_tls_chain_source | length > 0
+          - aggregare_kanidm_tls_key_source | length > 0
+        fail_msg: >-
+          Kanidm needs an administrator-selected DNS domain and HTTPS origin consistent with that domain,
+          plus an administrator-provided certificate chain and matching private key.
+      when: aggregare_identity_provider_effective == 'kanidm'
 
-    - name: Persist a new or explicitly updated identity selection
+    - name: Reject changing an established Kanidm identity domain or origin
+      ansible.builtin.assert:
+        that:
+          - aggregare_identity_saved_config.identity_domain | default(aggregare_identity_domain) == aggregare_identity_domain
+          - aggregare_identity_saved_config.identity_origin | default(aggregare_identity_origin) == aggregare_identity_origin
+        fail_msg: >-
+          The saved Kanidm identity domain/origin cannot be changed in place. Changing identity domains after
+          enrollment requires an explicit migration procedure. Restore the saved values or plan a migration.
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_identity_config_stat.stat.exists
+        - aggregare_identity_saved_config.identity_domain is defined
+
+    - name: Inspect administrator-provided certificate files before changes
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ aggregare_kanidm_tls_chain_source }}"
+        - "{{ aggregare_kanidm_tls_key_source }}"
+      register: aggregare_kanidm_tls_source_stats
+      delegate_to: localhost
+      run_once: true
+      when: aggregare_identity_provider_effective == 'kanidm'
+
+    - name: Require readable administrator-provided TLS files
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.isreg
+          - item.stat.readable
+        fail_msg: The configured Kanidm TLS certificate chain and private key must be readable regular files on the Ansible controller.
+      loop: "{{ aggregare_kanidm_tls_source_stats.results | default([]) }}"
+      when: aggregare_identity_provider_effective == 'kanidm'
+
+    - name: Run shared DNS and TLS preflight before changing persistent state
+      ansible.builtin.script:
+        cmd: "{{ aggregare_kanidm_preflight_tool }} --origin {{ aggregare_identity_origin | quote }} --format json{% if identity_preflight_cafile is defined and identity_preflight_cafile | length > 0 %} --cafile {{ identity_preflight_cafile | quote }}{% endif %}"
+      register: aggregare_kanidm_preflight
+      changed_when: false
+      when: aggregare_identity_provider_effective == 'kanidm'
+
+    - name: Report completed DNS and TLS preflight
+      ansible.builtin.debug:
+        msg: "{{ aggregare_kanidm_preflight.stdout | from_json }}"
+      when: aggregare_identity_provider_effective == 'kanidm'
+
+    - name: Ensure persistent identity configuration directory exists
+      ansible.builtin.file:
+        path: "{{ aggregare_identity_config_file | dirname }}"
+        state: directory
+        mode: '0755'
+
+    - name: Persist version 2 Kanidm endpoint selection
+      ansible.builtin.copy:
+        dest: "{{ aggregare_identity_config_file }}"
+        content: "{{ {'schema_version': 2, 'identity_provider': 'kanidm', 'identity_domain': aggregare_identity_domain, 'identity_origin': aggregare_identity_origin} | to_nice_json }}\n"
+        mode: '0644'
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - not aggregare_identity_config_stat.stat.exists or aggregare_identity_saved_config.schema_version | default(0) != 2
+
+    - name: Persist external OIDC or none selection
       ansible.builtin.copy:
         dest: "{{ aggregare_identity_config_file }}"
         content: "{{ {'schema_version': 1, 'identity_provider': aggregare_identity_provider_effective} | to_nice_json }}\n"
-        mode: "0644"
-      when: not aggregare_identity_config_stat.stat.exists or (aggregare_identity_provider is defined and aggregare_identity_provider != (aggregare_identity_saved_config.identity_provider | default('')))
+        mode: '0644'
+      when:
+        - aggregare_identity_provider_effective in ['external_oidc', 'none']
+        - not aggregare_identity_config_stat.stat.exists or aggregare_identity_saved_config.identity_provider | default('') != aggregare_identity_provider_effective
 
-    - name: Report the effective identity selection
+    - name: Deploy Kanidm service
+      when: aggregare_identity_provider_effective == 'kanidm'
+      block:
+        - name: Install Podman for Kanidm
+          ansible.builtin.apt:
+            name: podman
+            state: present
+            update_cache: true
+            cache_valid_time: 3600
+
+        - name: Create Kanidm persistent directories
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: directory
+            owner: "{{ item.owner }}"
+            group: "{{ item.group }}"
+            mode: "{{ item.mode }}"
+          loop:
+            - { path: "{{ aggregare_kanidm_data_dir }}", owner: '1000', group: '1000', mode: '0750' }
+            - { path: "{{ aggregare_kanidm_config_dir }}", owner: root, group: root, mode: '0750' }
+            - { path: /etc/containers/systemd, owner: root, group: root, mode: '0755' }
+
+        - name: Install Kanidm server configuration
+          ansible.builtin.template:
+            src: "{{ playbook_dir }}/../templates/kanidm-server.toml.j2"
+            dest: "{{ aggregare_kanidm_data_dir }}/server.toml"
+            owner: root
+            group: root
+            mode: '0644'
+          register: aggregare_kanidm_server_config
+
+        - name: Install administrator-provided Kanidm TLS chain
+          ansible.builtin.copy:
+            src: "{{ aggregare_kanidm_tls_chain_source }}"
+            dest: "{{ aggregare_kanidm_tls_chain_target }}"
+            owner: '1000'
+            group: '1000'
+            mode: '0644'
+          register: aggregare_kanidm_tls_chain
+
+        - name: Install administrator-provided Kanidm TLS key
+          ansible.builtin.copy:
+            src: "{{ aggregare_kanidm_tls_key_source }}"
+            dest: "{{ aggregare_kanidm_tls_key_target }}"
+            owner: '1000'
+            group: '1000'
+            mode: '0600'
+          register: aggregare_kanidm_tls_key
+          no_log: true
+
+        - name: Install Kanidm Quadlet service definition
+          ansible.builtin.template:
+            src: "{{ playbook_dir }}/../templates/kanidm.container.j2"
+            dest: /etc/containers/systemd/aggregare-kanidm.container
+            owner: root
+            group: root
+            mode: '0644'
+          register: aggregare_kanidm_quadlet
+
+        - name: Reload systemd for Kanidm Quadlet
+          ansible.builtin.systemd_service:
+            daemon_reload: true
+          when: aggregare_kanidm_quadlet.changed
+
+        - name: Start or safely reapply Kanidm service
+          ansible.builtin.systemd_service:
+            name: aggregare-kanidm.service
+            enabled: true
+            state: "{{ 'restarted' if aggregare_kanidm_quadlet.changed or aggregare_kanidm_server_config.changed or aggregare_kanidm_tls_chain.changed or aggregare_kanidm_tls_key.changed else 'started' }}"
+
+        - name: Verify Kanidm status endpoint
+          ansible.builtin.uri:
+            url: "{{ aggregare_identity_origin }}/status"
+            method: GET
+            status_code: 200
+            validate_certs: true
+            ca_path: "{{ identity_preflight_cafile | default(omit) }}"
+          register: aggregare_kanidm_health
+          retries: 30
+          delay: 5
+          until: aggregare_kanidm_health.status == 200
+
+    - name: Report effective identity configuration
       ansible.builtin.debug:
-        msg: "Identity provider selection is {{ aggregare_identity_provider_effective }}; provider installation is not part of this configuration step."
+        msg: >-
+          Identity provider is {{ aggregare_identity_provider_effective }}.
+          {% if aggregare_identity_provider_effective == 'kanidm' %}Kanidm {{ aggregare_kanidm_version }} is running at {{ aggregare_identity_origin }}.{% else %}No Kanidm service was installed.{% endif %}

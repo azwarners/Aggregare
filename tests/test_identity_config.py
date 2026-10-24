@@ -20,6 +20,7 @@ class IdentityConfigTests(unittest.TestCase):
                                      capture_output=True, text=True)
         self.assertEqual(help_result.returncode, 0)
         self.assertIn("kanidm|external_oidc|none", help_result.stdout)
+        self.assertIn("--identity-domain FQDN", help_result.stdout)
         invalid = subprocess.run([str(ROOT / "install.sh"), "--identity-provider", "unknown"],
                                  capture_output=True, text=True)
         self.assertEqual(invalid.returncode, 2)
@@ -28,7 +29,7 @@ class IdentityConfigTests(unittest.TestCase):
     def test_versioned_config_accepts_all_supported_selections(self):
         schema = json.loads((ROOT / "schemas/v1/identity-config.schema.json").read_text())
         Draft202012Validator.check_schema(schema)
-        for provider in ("kanidm", "external_oidc", "none"):
+        for provider in ("external_oidc", "none"):
             with self.subTest(provider=provider), tempfile.TemporaryDirectory() as directory:
                 config = Path(directory) / "identity.json"
                 result = self.run_ansible(config, provider=provider)
@@ -39,6 +40,15 @@ class IdentityConfigTests(unittest.TestCase):
                 result = subprocess.run([str(CONFIG_TOOL), "get-provider", str(config)], check=True,
                                         capture_output=True, text=True)
                 self.assertEqual(result.stdout.strip(), provider)
+
+    def test_version_2_schema_accepts_persisted_kanidm_endpoint(self):
+        schema = json.loads((ROOT / "schemas/v1/identity-config.schema.json").read_text())
+        Draft202012Validator(schema).validate({
+            "schema_version": 2,
+            "identity_provider": "kanidm",
+            "identity_domain": "id.home.arpa",
+            "identity_origin": "https://id.home.arpa",
+        })
 
     @unittest.skipUnless(shutil.which("ansible-playbook"), "Ansible Core is not installed")
     def test_reapply_uses_persisted_selection_without_rewriting_it(self):
@@ -71,7 +81,7 @@ class IdentityConfigTests(unittest.TestCase):
             missing = Path(directory) / "missing.json"
             no_selection = self.run_ansible(missing)
             self.assertNotEqual(no_selection.returncode, 0)
-            self.assertIn("no persistent identity selection exists", no_selection.stdout + no_selection.stderr)
+            self.assertIn("Set aggregare_identity_provider", no_selection.stdout + no_selection.stderr)
             invalid_selection = self.run_ansible(missing, provider="invalid")
             self.assertNotEqual(invalid_selection.returncode, 0)
             self.assertFalse(missing.exists())
@@ -79,20 +89,79 @@ class IdentityConfigTests(unittest.TestCase):
             corrupt.write_text(json.dumps({"schema_version": 1, "identity_provider": "mystery"}))
             invalid_saved = self.run_ansible(corrupt)
             self.assertNotEqual(invalid_saved.returncode, 0)
-            self.assertIn("must be version 1", invalid_saved.stdout + invalid_saved.stderr)
+            self.assertIn("is invalid", invalid_saved.stdout + invalid_saved.stderr)
 
     def test_ansible_identity_selection_requires_explicit_supported_input(self):
         playbook = IDENTITY_PLAYBOOK.read_text()
         installer = (ROOT / "install.sh").read_text()
         self.assertIn("aggregare_identity_provider is defined", playbook)
         self.assertIn("aggregare_identity_provider in ['kanidm', 'external_oidc', 'none']", playbook)
-        self.assertIn("provider installation is not part", playbook)
+        self.assertIn("Deploy Kanidm service", playbook)
+        self.assertIn("aggregare_identity_provider_effective == 'kanidm'", playbook)
         self.assertIn('IDENTITY_CONFIG_FILE="/etc/aggregare/identity.json"', installer)
         self.assertIn("aggregare_identity_config_file: /etc/aggregare/identity.json", playbook)
         self.assertIn("this installer needs an interactive terminal", installer)
         self.assertFalse(any("kanidm" in path.name.lower() for path in (ROOT / "ansible/roles").iterdir()))
 
-    def run_ansible(self, config, provider=None, update=False, check=False):
+    def test_kanidm_preflight_failure_preserves_config_and_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "identity.json"
+            config.write_text(json.dumps({
+                "schema_version": 2,
+                "identity_provider": "kanidm",
+                "identity_domain": "id.example.invalid",
+                "identity_origin": "https://id.example.invalid",
+            }) + "\n")
+            original = config.read_bytes()
+            data = root / "kanidm-data"
+            data.mkdir()
+            marker = data / "identity.db"
+            marker.write_bytes(b"existing identity data")
+            cert = root / "chain.pem"
+            key = root / "key.pem"
+            cert.write_text("test certificate")
+            key.write_text("test private key")
+            result = self.run_ansible(
+                config, provider="kanidm", domain="id.example.invalid",
+                origin="https://id.example.invalid", chain=str(cert), key=str(key),
+                data_dir=str(data), update=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("origin_dns", result.stdout + result.stderr)
+            self.assertEqual(config.read_bytes(), original)
+            self.assertEqual(marker.read_bytes(), b"existing identity data")
+
+    def test_established_kanidm_domain_change_is_rejected_before_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "identity.json"
+            config.write_text(json.dumps({
+                "schema_version": 2,
+                "identity_provider": "kanidm",
+                "identity_domain": "id.home.arpa",
+                "identity_origin": "https://id.home.arpa",
+            }) + "\n")
+            original = config.read_bytes()
+            data = root / "kanidm-data"
+            data.mkdir()
+            marker = data / "identity.db"
+            marker.write_bytes(b"existing identity data")
+            cert = root / "chain.pem"
+            key = root / "key.pem"
+            cert.write_text("test certificate")
+            key.write_text("test private key")
+            result = self.run_ansible(
+                config, provider="kanidm", domain="new-id.home.arpa",
+                origin="https://new-id.home.arpa", chain=str(cert), key=str(key),
+                data_dir=str(data), update=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("cannot be changed in place", result.stdout + result.stderr)
+            self.assertEqual(config.read_bytes(), original)
+            self.assertEqual(marker.read_bytes(), b"existing identity data")
+
+    def run_ansible(self, config, provider=None, update=False, check=False, **extra):
         if not shutil.which("ansible-playbook"):
             self.skipTest("Ansible Core is not installed")
         variables = {"aggregare_identity_config_file": str(config), "ansible_become": False}
@@ -100,6 +169,15 @@ class IdentityConfigTests(unittest.TestCase):
             variables["aggregare_identity_provider"] = provider
         if update:
             variables["aggregare_identity_provider_update"] = True
+        variables.update({
+            key: value for key, value in {
+                "aggregare_identity_domain": extra.get("domain"),
+                "aggregare_identity_origin": extra.get("origin"),
+                "aggregare_kanidm_tls_chain_source": extra.get("chain"),
+                "aggregare_kanidm_tls_key_source": extra.get("key"),
+                "aggregare_kanidm_data_dir": extra.get("data_dir"),
+            }.items() if value is not None
+        })
         with tempfile.TemporaryDirectory() as tmp:
             environment = dict(os.environ)
             environment["ANSIBLE_LOCAL_TEMP"] = tmp

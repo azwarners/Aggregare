@@ -10,28 +10,41 @@ application credentials remain separate from Ubuntu administrator access.
 Where an app supports OIDC/OAuth, its inputs are provider-neutral: issuer URL,
 provider slug, scopes, app client ID, and (only for confidential clients) a
 separately protected secret. The catalog describes callback paths, client
-modes, PKCE, scopes, local recovery, and verification status. No identity
-provider is currently installed or provisioned by Aggregare. Apps without
+modes, PKCE, scopes, local recovery, and verification status. Selecting
+`kanidm` deploys the identity service described below; application OIDC clients
+remain future work. Apps without
 federation need a documented, secure bootstrap path. Do not describe the app
 set as SSO-enabled unless each app supports the configured flow.
 
-The durable provider choice is a version 1 JSON document at
-`/etc/aggregare/identity.json`, with `identity_provider` set to `kanidm`,
-`external_oidc`, or `none`. Both `install.sh` and direct Ansible use this same
-file. The installer still requires a TTY for other host setup prompts;
-`--identity-provider external_oidc` (or either other value) makes only the
-provider selection noninteractive. A first installer run prompts for a choice
-if the option is omitted; later runs reuse the saved choice. A conflicting
-choice fails visibly; pass an explicit update option to the Ansible playbook
-(`-e aggregare_identity_provider_update=true`) or the installer's provider
-option to intentionally change it.
+The durable provider choice is `/etc/aggregare/identity.json`. Version 1
+records `identity_provider` as `kanidm`, `external_oidc`, or `none`. Version 2
+also stores the administrator-selected Kanidm `identity_domain` and
+`identity_origin`. Both `install.sh` and direct Ansible use this same file, and
+each host/environment has its own copy. Later installer runs reuse the saved
+provider and endpoint. Established Kanidm domains and origins cannot be changed
+in place; changing them after enrollment requires a planned migration.
 
-For noninteractive identity configuration alone, run
-`ansible-playbook -i INVENTORY playbooks/phase25-identity-config.yml --become
--e aggregare_identity_provider=external_oidc`. On later runs, omit the
-provider variable to reuse the saved choice. Missing and unsupported values
-fail visibly. This selection does not install a provider; external OIDC
-configuration and provider lifecycle remain administrator-owned.
+Selecting `kanidm` deploys the pinned `docker.io/kanidm/server:1.11.2` image
+as a Podman Quadlet using UID/GID 1000 and persistent data at
+`/var/lib/aggregare/kanidm`. The administrator supplies a certificate chain
+and matching private key. Aggregare does not create DNS records, issue
+certificates, configure a reverse proxy, open firewall/router ports, or expose
+the service. The configured HTTPS origin must already resolve and present a
+trusted certificate before the service is applied; the site edge should route
+that origin to the local listener on `127.0.0.1:8443`. DNS/TLS preflight runs
+before persistent identity configuration or Kanidm data is changed. Safe
+reapplication preserves the data directory and restarts the service only when
+its definition, server configuration, or TLS files change.
+
+For direct Ansible Kanidm setup, provide `aggregare_identity_provider=kanidm`,
+`aggregare_identity_domain`, `aggregare_identity_origin`,
+`aggregare_kanidm_tls_chain_source`, and `aggregare_kanidm_tls_key_source` in
+protected variables, then run `ansible-playbook -i INVENTORY
+playbooks/phase25-identity-config.yml --become -e @/secure/config/kanidm.json`.
+A private CA bundle can be supplied with `identity_preflight_cafile`; it must
+already be available at that path on the managed host. For `external_oidc` or
+`none`, only the provider choice is required and no Kanidm-specific hostname or
+TLS material is requested.
 
 ## Identity DNS and TLS boundary
 
