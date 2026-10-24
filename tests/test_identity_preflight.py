@@ -27,6 +27,16 @@ class IdentityPreflightTests(unittest.TestCase):
         self.assertTrue(all(check["status"] == "passed" for check in checks))
         discovery.assert_not_called()
 
+    def test_dns_only_mode_does_not_require_a_running_https_endpoint(self):
+        with (patch.object(preflight, "resolve", return_value=["192.0.2.44"]),
+              patch.object(preflight, "check_tls", side_effect=AssertionError("TLS must not run")),
+              patch.object(preflight, "fetch_discovery", side_effect=AssertionError("discovery must not run"))):
+            checks = preflight.run_checks("https://id.example.test", None, None, dns_only=True)
+        self.assertEqual(checks, [{
+            "name": "origin_dns", "status": "passed", "host": "id.example.test",
+            "addresses": ["192.0.2.44"],
+        }])
+
     def test_success_checks_dns_tls_and_exact_discovery_issuer(self):
         issuer = "https://id.example.test/oauth2"
         discovery = {"issuer": issuer, "authorization_endpoint": "https://id.example.test/authorize",
