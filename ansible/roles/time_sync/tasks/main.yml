@@ -89,24 +89,41 @@
   timeout: 310
   when: aggregare_time_sync_initial.stdout | trim != 'yes'
 
-- name: Confirm systemd reports the host clock synchronized
+- name: Read Chrony's final synchronization state
   ansible.builtin.command:
     argv:
-      - timedatectl
-      - show
-      - --property=NTPSynchronized
-      - --value
-  register: aggregare_time_sync_final
+      - chronyc
+      - tracking
+  register: aggregare_chrony_tracking_final
   changed_when: false
-  until: aggregare_time_sync_final.stdout | trim == 'yes'
-  retries: 12
-  delay: 5
+  when: aggregare_time_sync_initial.stdout | trim != 'yes'
+
+- name: Read Chrony's final remaining clock correction
+  ansible.builtin.command:
+    argv:
+      - awk
+      - '/^System time/ {print $4; exit}'
+      - /dev/stdin
+    stdin: "{{ aggregare_chrony_tracking_final.stdout }}"
+  register: aggregare_chrony_offset_final
+  changed_when: false
+  when: aggregare_time_sync_initial.stdout | trim != 'yes'
+
+- name: Require Chrony to remain synchronized after correction
+  ansible.builtin.assert:
+    that:
+      - aggregare_chrony_tracking_final.stdout is search('Leap status\\s*:\\s*Normal')
+      - aggregare_chrony_offset_final.stdout is match('^[0-9]+(\\.[0-9]+)?$')
+      - aggregare_chrony_offset_final.stdout | float <= 1
+    fail_msg: Chrony did not remain synchronized within one second after correction.
+  when: aggregare_time_sync_initial.stdout | trim != 'yes'
 
 - name: Report the synchronized host clock
   ansible.builtin.debug:
     msg: >-
-      Host clock synchronization is active. Chrony corrected the system clock
-      with a step when the remaining offset exceeded one second.
+      Chrony reports the host clock synchronized within one second. Chrony
+      corrected the system clock with a step when the remaining offset exceeded
+      one second.
   when:
     - aggregare_time_sync_initial.stdout | trim != 'yes'
     - aggregare_chrony_step is changed
