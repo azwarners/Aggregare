@@ -23,6 +23,18 @@
         "identity_origin": { "type": "string", "format": "uri", "pattern": "^https://" }
       },
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["schema_version", "identity_provider", "identity_domain", "identity_origin", "tls_mode"],
+      "properties": {
+        "schema_version": { "const": 3 },
+        "identity_provider": { "const": "kanidm" },
+        "identity_domain": { "type": "string", "minLength": 1 },
+        "identity_origin": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "tls_mode": { "enum": ["provided", "development"] }
+      },
+      "additionalProperties": false
     }
   ]
 }

@@ -3,9 +3,12 @@
 `tools/aggregare-identity-preflight` checks that a configured identity HTTPS
 origin is usable. For a first Kanidm deployment, the HTTPS service does not
 exist yet, so the deployment playbook uses its `--dns-only` mode before
-installing Kanidm. It separately checks the supplied certificate hostname,
-expiry, and matching private key before changing persistent state. After
-starting Kanidm, the playbook checks the live HTTPS `/status` endpoint.
+installing Kanidm. It checks supplied certificate hostname, expiry, and
+matching private key before changing persistent state. In explicit development
+mode, it uses the pinned Kanidm image's `kanidmd cert-generate` command only
+after DNS succeeds and only for an empty data directory. It validates the
+generated certificate and checks the live HTTPS `/status` endpoint with that
+certificate explicitly scoped as its CA bundle.
 When a provider issuer already exists, the tool can also validate that issuer
 and its discovery document.
 It makes no DNS, certificate, firewall, or router changes. It does not accept
@@ -13,10 +16,13 @@ or print credentials.
 
 Use `--dns-only` before deploying a new Kanidm service. It verifies that the
 origin hostname resolves without requiring a running HTTPS endpoint. The
-deployment still requires an administrator-selected origin and domain plus a
-certificate chain and matching private key for that hostname. For a private
-CA, provide its public PEM root certificate with `--cafile`; never provide a
-CA private key. DNS-only mode does not attempt TLS or OIDC discovery.
+deployment still requires an administrator-selected origin and domain.
+Production requires a trusted certificate chain and matching private key for
+that hostname. The opt-in development mode generates self-signed evaluation
+material and prints its fingerprint and storage path; clients do not trust it
+until an administrator imports the public certificate into each required trust
+store. Never provide a private CA key. DNS-only mode does not attempt TLS or
+OIDC discovery.
 
 Run the normal origin check after the service is available, or when checking
 an existing endpoint. The origin-only mode does not attempt OIDC discovery

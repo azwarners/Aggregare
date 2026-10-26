@@ -50,6 +50,23 @@ class IdentityConfigTests(unittest.TestCase):
             "identity_origin": "https://id.home.arpa",
         })
 
+    def test_version_3_schema_persists_tls_mode(self):
+        schema = json.loads((ROOT / "schemas/v1/identity-config.schema.json").read_text())
+        Draft202012Validator(schema).validate({
+            "schema_version": 3,
+            "identity_provider": "kanidm",
+            "identity_domain": "id.home.arpa",
+            "identity_origin": "https://id.home.arpa",
+            "tls_mode": "development",
+        })
+        Draft202012Validator(schema).validate({
+            "schema_version": 3,
+            "identity_provider": "kanidm",
+            "identity_domain": "id.example.test",
+            "identity_origin": "https://id.example.test",
+            "tls_mode": "provided",
+        })
+
     @unittest.skipUnless(shutil.which("ansible-playbook"), "Ansible Core is not installed")
     def test_reapply_uses_persisted_selection_without_rewriting_it(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -99,7 +116,7 @@ class IdentityConfigTests(unittest.TestCase):
         self.assertIn("Deploy Kanidm service", playbook)
         self.assertIn("aggregare_identity_provider_effective == 'kanidm'", playbook)
         self.assertIn("--dns-only", playbook)
-        self.assertLess(playbook.index("--dns-only"), playbook.index("Persist version 2 Kanidm endpoint selection"))
+        self.assertLess(playbook.index("--dns-only"), playbook.index("Persist version 3 Kanidm endpoint and TLS mode"))
         self.assertLess(playbook.index("Start or safely reapply Kanidm service"),
                         playbook.index("Verify Kanidm status endpoint"))
         self.assertLess(playbook.index("Require a valid certificate, hostname match"),
@@ -114,6 +131,14 @@ class IdentityConfigTests(unittest.TestCase):
         self.assertIn('IDENTITY_DOMAIN="${IDENTITY_DOMAIN:-$saved_domain}"', installer)
         self.assertIn('IDENTITY_ORIGIN="${IDENTITY_ORIGIN:-$saved_origin}"', installer)
         self.assertIn("this installer needs an interactive terminal", installer)
+        self.assertIn("--kanidm-development-certificate", installer)
+        self.assertIn("kanidmd", playbook)
+        self.assertIn("cert-generate", playbook)
+        self.assertIn(".aggregare-development-tls.json", playbook)
+        self.assertIn("development certificates can only be generated into an empty Kanidm data directory".lower(), playbook.lower())
+        self.assertIn("verify kanidm status endpoint", playbook.lower())
+        self.assertIn("aggregare_kanidm_dev_ca_target if aggregare_kanidm_tls_mode_effective == 'development'", playbook)
+        self.assertIn("SHA-256 fingerprint", playbook)
         self.assertFalse(any("kanidm" in path.name.lower() for path in (ROOT / "ansible/roles").iterdir()))
 
     def test_kanidm_preflight_failure_preserves_config_and_data(self):
@@ -141,6 +166,24 @@ class IdentityConfigTests(unittest.TestCase):
             self.assertIn("origin_dns", result.stdout + result.stderr)
             self.assertEqual(config.read_bytes(), original)
             self.assertEqual(marker.read_bytes(), b"existing identity data")
+
+    def test_development_dns_failure_preserves_identity_config_and_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "identity.json"
+            data = root / "kanidm-data"
+            data.mkdir()
+            marker = data / "identity.db"
+            marker.write_bytes(b"existing identity data")
+            result = self.run_ansible(
+                config, provider="kanidm", domain="id.example.invalid",
+                origin="https://id.example.invalid", data_dir=str(data), tls_mode="development",
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("origin_dns", result.stdout + result.stderr)
+            self.assertFalse(config.exists())
+            self.assertEqual(marker.read_bytes(), b"existing identity data")
+            self.assertEqual(sorted(path.name for path in data.iterdir()), ["identity.db"])
 
     def test_mismatched_tls_key_fails_before_identity_or_data_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -216,6 +259,7 @@ class IdentityConfigTests(unittest.TestCase):
                 "aggregare_kanidm_tls_chain_source": extra.get("chain"),
                 "aggregare_kanidm_tls_key_source": extra.get("key"),
                 "aggregare_kanidm_data_dir": extra.get("data_dir"),
+                "aggregare_kanidm_tls_mode": extra.get("tls_mode"),
             }.items() if value is not None
         })
         with tempfile.TemporaryDirectory() as tmp:
