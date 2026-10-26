@@ -15,6 +15,8 @@ IDENTITY_DOMAIN=""
 IDENTITY_ORIGIN=""
 KANIDM_TLS_CHAIN=""
 KANIDM_TLS_KEY=""
+KANIDM_DEVELOPMENT_CERTIFICATE=false
+KANIDM_TLS_MODE=""
 IDENTITY_CA_FILE=""
 LLAMA_CPP_URL=""
 LAN_ACCESS=""
@@ -48,6 +50,10 @@ while (($#)); do
       KANIDM_TLS_KEY="$2"
       shift 2
       ;;
+    --kanidm-development-certificate)
+      KANIDM_DEVELOPMENT_CERTIFICATE=true
+      shift
+      ;;
     --identity-ca-file)
       (($# >= 2)) || { printf 'Installer stopped: --identity-ca-file needs a PEM CA bundle file path.\n' >&2; exit 2; }
       IDENTITY_CA_FILE="$2"
@@ -63,7 +69,7 @@ while (($#)); do
       shift
       ;;
     --help|-h)
-      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--identity-domain FQDN --identity-origin HTTPS_URL --kanidm-tls-chain FILE --kanidm-tls-key FILE] [--identity-ca-file FILE] [--llama-cpp-url URL] [--reset-progress]\n'
+      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--identity-domain FQDN --identity-origin HTTPS_URL (--kanidm-tls-chain FILE --kanidm-tls-key FILE | --kanidm-development-certificate)] [--identity-ca-file FILE] [--llama-cpp-url URL] [--reset-progress]\n'
       exit 0
       ;;
     *) printf 'Installer stopped: unknown option: %s\n' "$1" >&2; exit 2 ;;
@@ -185,20 +191,48 @@ select_kanidm_endpoint() {
   fi
   saved_chain="$(install_state_get kanidm_tls_chain)" || fail "could not read saved installer progress."
   saved_key="$(install_state_get kanidm_tls_key)" || fail "could not read saved installer progress."
+  KANIDM_TLS_MODE="$(install_state_get kanidm_tls_mode)" || fail "could not read saved installer progress."
+  [[ -n "$KANIDM_TLS_MODE" ]] || KANIDM_TLS_MODE="$(python3 "$PROJECT_ROOT/tools/aggregare-identity-config" get-field tls_mode "$IDENTITY_CONFIG_FILE" 2>/dev/null || true)"
   IDENTITY_DOMAIN="${IDENTITY_DOMAIN:-$saved_domain}"
   IDENTITY_ORIGIN="${IDENTITY_ORIGIN:-$saved_origin}"
   KANIDM_TLS_CHAIN="${KANIDM_TLS_CHAIN:-$saved_chain}"
   KANIDM_TLS_KEY="${KANIDM_TLS_KEY:-$saved_key}"
+  if [[ "$KANIDM_DEVELOPMENT_CERTIFICATE" == true ]]; then
+    KANIDM_TLS_MODE=development
+  elif [[ -z "$KANIDM_TLS_MODE" ]]; then
+    KANIDM_TLS_MODE=provided
+  fi
   [[ -n "$IDENTITY_DOMAIN" ]] || { read -r -p 'Administrator-selected Kanidm identity FQDN (for example, id.home.arpa): ' IDENTITY_DOMAIN; }
   [[ -n "$IDENTITY_ORIGIN" ]] || { read -r -p 'Kanidm trusted HTTPS origin (for example, https://id.home.arpa): ' IDENTITY_ORIGIN; }
-  [[ -n "$KANIDM_TLS_CHAIN" ]] || { read -r -p 'PEM certificate-chain file path on this Ansible controller: ' KANIDM_TLS_CHAIN; }
-  [[ -n "$KANIDM_TLS_KEY" ]] || { read -r -p 'Matching PEM private-key file path on this Ansible controller: ' KANIDM_TLS_KEY; }
-  [[ -f "$KANIDM_TLS_CHAIN" && -r "$KANIDM_TLS_CHAIN" ]] || fail "the Kanidm certificate chain must be a readable file on this controller."
-  [[ -f "$KANIDM_TLS_KEY" && -r "$KANIDM_TLS_KEY" ]] || fail "the Kanidm private key must be a readable file on this controller."
+  if [[ -z "$KANIDM_TLS_CHAIN" && -z "$KANIDM_TLS_KEY" && "$KANIDM_TLS_MODE" == provided ]]; then
+    if [[ -t 0 ]]; then
+      local dev_choice
+      read -r -p 'Use Kanidm self-signed evaluation certificates? They are untrusted on other devices until you configure trust. [y/N] ' dev_choice
+      case "${dev_choice,,}" in
+        y|yes) KANIDM_TLS_MODE=development ;;
+        *) read -r -p 'PEM certificate-chain file path on this Ansible controller: ' KANIDM_TLS_CHAIN
+           read -r -p 'Matching PEM private-key file path on this Ansible controller: ' KANIDM_TLS_KEY ;;
+      esac
+    else
+      fail "provide --kanidm-tls-chain and --kanidm-tls-key for production, or explicitly opt in with --kanidm-development-certificate for a disposable/private development install."
+    fi
+  fi
+  if [[ "$KANIDM_TLS_MODE" == provided ]]; then
+    [[ -n "$KANIDM_TLS_CHAIN" ]] || { read -r -p 'PEM certificate-chain file path on this Ansible controller: ' KANIDM_TLS_CHAIN; }
+    [[ -n "$KANIDM_TLS_KEY" ]] || { read -r -p 'Matching PEM private-key file path on this Ansible controller: ' KANIDM_TLS_KEY; }
+    [[ -f "$KANIDM_TLS_CHAIN" && -r "$KANIDM_TLS_CHAIN" ]] || fail "the Kanidm certificate chain must be a readable file on this controller."
+    [[ -f "$KANIDM_TLS_KEY" && -r "$KANIDM_TLS_KEY" ]] || fail "the Kanidm private key must be a readable file on this controller."
+  elif [[ "$KANIDM_TLS_MODE" == development ]]; then
+    [[ -z "$KANIDM_TLS_CHAIN" && -z "$KANIDM_TLS_KEY" ]] || fail "do not combine generated development certificates with supplied certificate files."
+    printf 'Development TLS selected: generated certificate trust is local to this setup. Other devices will reject it until you explicitly trust the displayed certificate.\n'
+  else
+    fail "saved Kanidm TLS mode is invalid; choose supplied certificate files or the explicit development certificate option."
+  fi
   [[ "$IDENTITY_DOMAIN" == "$saved_domain" || -z "$saved_domain" ]] || fail "the saved Kanidm identity domain cannot be changed in place; an identity-domain migration is required."
   [[ "$IDENTITY_ORIGIN" == "$saved_origin" || -z "$saved_origin" ]] || fail "the saved Kanidm origin cannot be changed in place; an identity-domain migration is required."
   install_state_set kanidm_tls_chain "$KANIDM_TLS_CHAIN" || fail "could not save installer progress."
   install_state_set kanidm_tls_key "$KANIDM_TLS_KEY" || fail "could not save installer progress."
+  install_state_set kanidm_tls_mode "$KANIDM_TLS_MODE" || fail "could not save installer progress."
 }
 
 select_llama_cpp_endpoint() {
@@ -518,17 +552,19 @@ run_playbook_with_progress() {
 }
 
 IDENTITY_CONFIG_COMPLETE="$(install_state_get identity_config_playbook_complete)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
-IDENTITY_CONFIG_EXTRA_VARS="$(python3 - "$IDENTITY_PROVIDER" "$IDENTITY_DOMAIN" "$IDENTITY_ORIGIN" "$KANIDM_TLS_CHAIN" "$KANIDM_TLS_KEY" "$IDENTITY_CA_FILE" "$IDENTITY_PROVIDER_UPDATE" <<'PY'
+IDENTITY_CONFIG_EXTRA_VARS="$(python3 - "$IDENTITY_PROVIDER" "$IDENTITY_DOMAIN" "$IDENTITY_ORIGIN" "$KANIDM_TLS_CHAIN" "$KANIDM_TLS_KEY" "$KANIDM_TLS_MODE" "$IDENTITY_CA_FILE" "$IDENTITY_PROVIDER_UPDATE" <<'PY'
 import json
 import sys
-provider, domain, origin, chain, key, cafile, update = sys.argv[1:]
+provider, domain, origin, chain, key, tls_mode, cafile, update = sys.argv[1:]
 values = {"aggregare_identity_provider": provider,
           "aggregare_identity_provider_update": update == "true"}
 if provider == "kanidm":
     values.update({"aggregare_identity_domain": domain,
                    "aggregare_identity_origin": origin,
-                   "aggregare_kanidm_tls_chain_source": chain,
-                   "aggregare_kanidm_tls_key_source": key})
+                   "aggregare_kanidm_tls_mode": tls_mode})
+    if chain:
+        values["aggregare_kanidm_tls_chain_source"] = chain
+        values["aggregare_kanidm_tls_key_source"] = key
     if cafile:
         values["identity_preflight_cafile"] = cafile
 print(json.dumps(values))

@@ -11,10 +11,13 @@
     aggregare_kanidm_config_dir: /etc/aggregare/kanidm
     aggregare_kanidm_tls_chain_target: "{{ aggregare_kanidm_data_dir }}/chain.pem"
     aggregare_kanidm_tls_key_target: "{{ aggregare_kanidm_data_dir }}/key.pem"
+    aggregare_kanidm_dev_tls_marker: "{{ aggregare_kanidm_data_dir }}/.aggregare-development-tls.json"
+    aggregare_kanidm_dev_ca_target: "{{ aggregare_kanidm_data_dir }}/ca.pem"
     aggregare_kanidm_tls_chain_validation_path: "{{ aggregare_kanidm_tls_chain_source | default(aggregare_kanidm_tls_chain_target) }}"
     aggregare_kanidm_tls_key_validation_path: "{{ aggregare_kanidm_tls_key_source | default(aggregare_kanidm_tls_key_target) }}"
     aggregare_kanidm_origin_host: "{{ aggregare_identity_origin_effective | regex_replace('^https://', '') | regex_replace(':([0-9]+)$', '') }}"
     aggregare_kanidm_preflight_tool: "{{ playbook_dir }}/../../tools/aggregare-identity-preflight"
+    aggregare_kanidm_tls_mode_effective: "{{ aggregare_kanidm_tls_mode | default((aggregare_identity_saved_config | default({})).tls_mode | default('provided')) }}"
   tasks:
     - name: Inspect persistent identity configuration
       ansible.builtin.stat:
@@ -36,7 +39,7 @@
       ansible.builtin.assert:
         that:
           - aggregare_identity_saved_config is mapping
-          - aggregare_identity_saved_config.schema_version | default(0) in [1, 2]
+          - aggregare_identity_saved_config.schema_version | default(0) in [1, 2, 3]
           - aggregare_identity_saved_config.identity_provider | default('') in ['kanidm', 'external_oidc', 'none']
           - >-
             (aggregare_identity_saved_config.schema_version == 1 and
@@ -46,7 +49,14 @@
              aggregare_identity_saved_config.identity_domain is string and
              aggregare_identity_saved_config.identity_origin is string and
              aggregare_identity_saved_config.keys() | list | sort ==
-             ['identity_domain', 'identity_origin', 'identity_provider', 'schema_version'])
+             ['identity_domain', 'identity_origin', 'identity_provider', 'schema_version']) or
+            (aggregare_identity_saved_config.schema_version == 3 and
+             aggregare_identity_saved_config.identity_provider == 'kanidm' and
+             aggregare_identity_saved_config.identity_domain is string and
+             aggregare_identity_saved_config.identity_origin is string and
+             aggregare_identity_saved_config.tls_mode in ['provided', 'development'] and
+             aggregare_identity_saved_config.keys() | list | sort ==
+             ['identity_domain', 'identity_origin', 'identity_provider', 'schema_version', 'tls_mode'])
         fail_msg: "{{ aggregare_identity_config_file }} is invalid; preserve a backup and repair it before applying identity configuration."
       when: aggregare_identity_config_stat.stat.exists
 
@@ -82,15 +92,19 @@
           - aggregare_identity_domain_effective is match('^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$')
           - aggregare_identity_origin_effective is match('^https://[^/]+$')
           - "(aggregare_identity_origin_effective | regex_replace('^https://', '') | regex_replace(':([0-9]+)$', '') | lower) == (aggregare_identity_domain_effective | lower) or (aggregare_identity_origin_effective | regex_replace('^https://', '') | regex_replace(':([0-9]+)$', '') | lower).endswith('.' ~ (aggregare_identity_domain_effective | lower))"
+          - aggregare_kanidm_tls_mode_effective in ['provided', 'development']
           - >-
-            (aggregare_kanidm_tls_chain_source is defined and aggregare_kanidm_tls_key_source is defined) or
-            (aggregare_identity_saved_config | default({})).schema_version | default(0) == 2
+            (aggregare_kanidm_tls_mode_effective == 'development' and
+             (aggregare_kanidm_tls_chain_source is not defined and aggregare_kanidm_tls_key_source is not defined)) or
+            (aggregare_kanidm_tls_mode_effective == 'provided' and
+             ((aggregare_kanidm_tls_chain_source is defined and aggregare_kanidm_tls_key_source is defined) or
+              (aggregare_identity_saved_config | default({})).schema_version | default(0) in [2, 3]))
           - (aggregare_kanidm_tls_chain_source is defined) == (aggregare_kanidm_tls_key_source is defined)
           - aggregare_kanidm_tls_chain_source | default('') | length > 0 or aggregare_kanidm_tls_chain_source is not defined
           - aggregare_kanidm_tls_key_source | default('') | length > 0 or aggregare_kanidm_tls_key_source is not defined
         fail_msg: >-
           Kanidm needs an administrator-selected DNS domain and HTTPS origin consistent with that domain,
-          plus an administrator-provided certificate chain and matching private key on first configuration.
+          plus supplied certificate files or explicit opt-in to Kanidm evaluation certificates for development.
       when: aggregare_identity_provider_effective == 'kanidm'
 
     - name: Reject changing an established Kanidm identity domain or origin
@@ -106,6 +120,18 @@
         - aggregare_identity_config_stat.stat.exists
         - aggregare_identity_saved_config.identity_domain is defined
 
+    - name: Reject changing the established Kanidm TLS mode in place
+      ansible.builtin.assert:
+        that:
+          - aggregare_identity_saved_config.tls_mode == aggregare_kanidm_tls_mode_effective
+        fail_msg: >-
+          The established Kanidm TLS mode cannot be changed as part of ordinary reapplication. Preserve its
+          certificate material or plan an explicit TLS migration.
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_identity_saved_config is defined
+        - aggregare_identity_saved_config.tls_mode is defined
+
     - name: Inspect administrator-provided certificate files before changes
       ansible.builtin.stat:
         path: "{{ item }}"
@@ -115,6 +141,7 @@
       run_once: true
       when:
         - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'provided'
         - aggregare_kanidm_tls_chain_source is defined
 
     - name: Require readable administrator-provided TLS files
@@ -128,6 +155,7 @@
       loop: "{{ aggregare_kanidm_tls_source_stats.results | default([]) }}"
       when:
         - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'provided'
         - aggregare_kanidm_tls_chain_source is defined
 
     - name: Inspect persisted Kanidm certificate files when reapplying saved settings
@@ -139,6 +167,7 @@
       register: aggregare_kanidm_persisted_tls_stats
       when:
         - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'provided'
         - aggregare_kanidm_tls_chain_source is not defined
 
     - name: Require persisted Kanidm certificate files on reapplication
@@ -152,6 +181,7 @@
       loop: "{{ aggregare_kanidm_persisted_tls_stats.results | default([]) }}"
       when:
         - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'provided'
         - aggregare_kanidm_tls_chain_source is not defined
 
     - name: Validate the supplied Kanidm certificate covers the selected HTTPS hostname
@@ -170,7 +200,9 @@
       register: aggregare_kanidm_certificate_check
       changed_when: false
       failed_when: false
-      when: aggregare_identity_provider_effective == 'kanidm'
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'provided'
 
     - name: Read the certificate public key
       ansible.builtin.command:
@@ -179,7 +211,9 @@
       register: aggregare_kanidm_certificate_public_key
       changed_when: false
       failed_when: false
-      when: aggregare_identity_provider_effective == 'kanidm'
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'provided'
 
     - name: Read the supplied private key public component
       ansible.builtin.command:
@@ -189,7 +223,9 @@
       changed_when: false
       failed_when: false
       no_log: true
-      when: aggregare_identity_provider_effective == 'kanidm'
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'provided'
 
     - name: Require a valid certificate, hostname match, and matching private key
       ansible.builtin.assert:
@@ -201,7 +237,9 @@
         fail_msg: >-
           The supplied TLS files must be a valid non-expired PEM certificate for the selected HTTPS hostname
           and its matching unencrypted PEM private key.
-      when: aggregare_identity_provider_effective == 'kanidm'
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'provided'
 
     - name: Run shared DNS preflight before changing persistent state
       ansible.builtin.script:
@@ -215,20 +253,233 @@
         msg: "{{ aggregare_kanidm_preflight.stdout | from_json }}"
       when: aggregare_identity_provider_effective == 'kanidm'
 
+    - name: Inspect development Kanidm data directory before certificate generation
+      ansible.builtin.stat:
+        path: "{{ aggregare_kanidm_data_dir }}"
+      register: aggregare_kanidm_dev_data_stat
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+
+    - name: Inspect existing development data directory entries
+      ansible.builtin.find:
+        paths: "{{ aggregare_kanidm_data_dir }}"
+        file_type: any
+        hidden: true
+      register: aggregare_kanidm_dev_data_entries
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+        - aggregare_kanidm_dev_data_stat.stat.isdir | default(false)
+        - (aggregare_identity_saved_config | default({})).tls_mode | default('') != 'development'
+
+    - name: Refuse development certificate generation over any existing identity material
+      ansible.builtin.assert:
+        that:
+          - not (aggregare_kanidm_dev_data_stat.stat.exists and (aggregare_kanidm_dev_data_entries.matched | default(0) | int > 0)) or aggregare_kanidm_dev_tls_marker in (aggregare_kanidm_dev_data_entries.files | map(attribute='path') | list)
+        fail_msg: >-
+          Development certificates can only be generated into an empty Kanidm data directory. Existing files may
+          include certificate material or an identity database; nothing was overwritten. Use supplied TLS files
+          for an existing deployment.
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+        - (aggregare_identity_saved_config | default({})).tls_mode | default('') != 'development'
+
+    - name: Install Podman for Kanidm certificate generation
+      ansible.builtin.apt:
+        name: podman
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+
+    - name: Inspect interrupted development certificate generation marker
+      ansible.builtin.stat:
+        path: "{{ aggregare_kanidm_dev_tls_marker }}"
+      register: aggregare_kanidm_dev_tls_marker_stat
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+
+    - name: Reuse interrupted development setup only when endpoint metadata matches
+      ansible.builtin.assert:
+        that:
+          - aggregare_kanidm_dev_tls_marker_stat.stat.exists
+        fail_msg: >-
+          The Kanidm data directory contains existing files but has no Aggregare development TLS marker.
+          Refusing to generate over or adopt unknown certificate/database files; inspect it before retrying.
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+        - aggregare_kanidm_dev_data_stat.stat.exists
+        - (aggregare_kanidm_dev_data_entries.matched | default(0) | int > 0)
+        - (aggregare_identity_saved_config | default({})).tls_mode | default('') != 'development'
+
+    - name: Create empty development Kanidm data directory
+      ansible.builtin.file:
+        path: "{{ aggregare_kanidm_data_dir }}"
+        state: directory
+        owner: '1000'
+        group: '1000'
+        mode: '0750'
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+        - (aggregare_identity_saved_config | default({})).tls_mode | default('') != 'development'
+        - not aggregare_kanidm_dev_tls_marker_stat.stat.exists | default(false)
+
+    - name: Install Kanidm server configuration for development certificate generation
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/kanidm-server.toml.j2"
+        dest: "{{ aggregare_kanidm_data_dir }}/server.toml"
+        owner: root
+        group: root
+        mode: '0644'
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+        - (aggregare_identity_saved_config | default({})).tls_mode | default('') != 'development'
+        - not aggregare_kanidm_dev_tls_marker_stat.stat.exists | default(false)
+
+    - name: Generate Kanidm evaluation certificates with the pinned server image
+      ansible.builtin.command:
+        argv:
+          - podman
+          - run
+          - --rm
+          - --user
+          - '1000:1000'
+          - --volume
+          - "{{ aggregare_kanidm_data_dir }}:/data:Z"
+          - "{{ aggregare_kanidm_image }}"
+          - kanidmd
+          - cert-generate
+      register: aggregare_kanidm_cert_generate
+      changed_when: true
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+        - (aggregare_identity_saved_config | default({})).tls_mode | default('') != 'development'
+        - not aggregare_kanidm_dev_tls_marker_stat.stat.exists | default(false)
+
+    - name: Record successful Kanidm evaluation certificate generation
+      ansible.builtin.copy:
+        dest: "{{ aggregare_kanidm_dev_tls_marker }}"
+        content: "{{ {'identity_domain': aggregare_identity_domain_effective, 'identity_origin': aggregare_identity_origin_effective, 'generator': 'kanidmd cert-generate', 'image': aggregare_kanidm_image} | to_nice_json }}\n"
+        owner: root
+        group: root
+        mode: '0600'
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+        - (aggregare_identity_saved_config | default({})).tls_mode | default('') != 'development'
+        - not aggregare_kanidm_dev_tls_marker_stat.stat.exists | default(false)
+
+    - name: Verify interrupted development setup endpoint metadata
+      ansible.builtin.slurp:
+        src: "{{ aggregare_kanidm_dev_tls_marker }}"
+      register: aggregare_kanidm_dev_tls_marker_contents
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+        - aggregare_kanidm_dev_tls_marker_stat.stat.exists | default(false)
+        - (aggregare_identity_saved_config | default({})).tls_mode | default('') != 'development'
+
+    - name: Reject interrupted development setup for a different identity endpoint
+      ansible.builtin.assert:
+        that:
+          - (aggregare_kanidm_dev_tls_marker_contents.content | b64decode | from_json).identity_domain == aggregare_identity_domain_effective
+          - (aggregare_kanidm_dev_tls_marker_contents.content | b64decode | from_json).identity_origin == aggregare_identity_origin_effective
+        fail_msg: Existing development TLS files belong to a different identity endpoint; refusing to change them.
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+        - aggregare_kanidm_dev_tls_marker_stat.stat.exists | default(false)
+        - (aggregare_identity_saved_config | default({})).tls_mode | default('') != 'development'
+
+    - name: Inspect persisted development Kanidm TLS files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ aggregare_kanidm_tls_chain_target }}"
+        - "{{ aggregare_kanidm_tls_key_target }}"
+        - "{{ aggregare_kanidm_dev_ca_target }}"
+      register: aggregare_kanidm_generated_tls_stats
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+
+    - name: Require generated or previously persisted development TLS files
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.isreg
+          - item.stat.readable
+          - item.stat.size | int > 0
+        fail_msg: Kanidm did not leave its development CA, certificate chain, and private key in persistent storage; inspect cert-generate output before retrying.
+      loop: "{{ aggregare_kanidm_generated_tls_stats.results | default([]) }}"
+      when:
+        - aggregare_identity_provider_effective == 'kanidm'
+        - aggregare_kanidm_tls_mode_effective == 'development'
+
+    - name: Validate the selected Kanidm certificate covers the HTTPS hostname
+      ansible.builtin.command:
+        argv: [openssl, x509, -in, "{{ aggregare_kanidm_tls_chain_validation_path }}", -noout, -checkhost, "{{ aggregare_kanidm_origin_host }}", -checkend, '0']
+      register: aggregare_kanidm_certificate_check
+      delegate_to: "{{ 'localhost' if aggregare_kanidm_tls_mode_effective == 'provided' and aggregare_kanidm_tls_chain_source is defined else inventory_hostname }}"
+      changed_when: false
+      failed_when: false
+      when: aggregare_identity_provider_effective == 'kanidm'
+
+    - name: Read the selected certificate public key
+      ansible.builtin.command:
+        argv: [openssl, x509, -in, "{{ aggregare_kanidm_tls_chain_validation_path }}", -pubkey, -noout]
+      register: aggregare_kanidm_certificate_public_key
+      delegate_to: "{{ 'localhost' if aggregare_kanidm_tls_mode_effective == 'provided' and aggregare_kanidm_tls_chain_source is defined else inventory_hostname }}"
+      changed_when: false
+      failed_when: false
+      when: aggregare_identity_provider_effective == 'kanidm'
+
+    - name: Read the selected private key public component
+      ansible.builtin.command:
+        argv: [openssl, pkey, -in, "{{ aggregare_kanidm_tls_key_validation_path }}", -pubout, -passin, 'pass:']
+      register: aggregare_kanidm_private_key_public_component
+      delegate_to: "{{ 'localhost' if aggregare_kanidm_tls_mode_effective == 'provided' and aggregare_kanidm_tls_key_source is defined else inventory_hostname }}"
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when: aggregare_identity_provider_effective == 'kanidm'
+
+    - name: Require a valid certificate, hostname match, and matching private key
+      ansible.builtin.assert:
+        that:
+          - aggregare_kanidm_certificate_check.rc == 0
+          - aggregare_kanidm_certificate_public_key.rc == 0
+          - aggregare_kanidm_private_key_public_component.rc == 0
+          - aggregare_kanidm_certificate_public_key.stdout == aggregare_kanidm_private_key_public_component.stdout
+        fail_msg: >-
+          The selected certificate must be valid for the identity HTTPS hostname and match its private key.
+          Generated evaluation certificates are not trusted by other devices until their public certificate is
+          explicitly installed in those devices' trust stores.
+      when: aggregare_identity_provider_effective == 'kanidm'
+
     - name: Ensure persistent identity configuration directory exists
       ansible.builtin.file:
         path: "{{ aggregare_identity_config_file | dirname }}"
         state: directory
         mode: '0755'
 
-    - name: Persist version 2 Kanidm endpoint selection
+    - name: Persist version 3 Kanidm endpoint and TLS mode
       ansible.builtin.copy:
         dest: "{{ aggregare_identity_config_file }}"
-        content: "{{ {'schema_version': 2, 'identity_provider': 'kanidm', 'identity_domain': aggregare_identity_domain_effective, 'identity_origin': aggregare_identity_origin_effective} | to_nice_json }}\n"
+        content: "{{ {'schema_version': 3, 'identity_provider': 'kanidm', 'identity_domain': aggregare_identity_domain_effective, 'identity_origin': aggregare_identity_origin_effective, 'tls_mode': aggregare_kanidm_tls_mode_effective} | to_nice_json }}\n"
         mode: '0644'
       when:
         - aggregare_identity_provider_effective == 'kanidm'
-        - not aggregare_identity_config_stat.stat.exists or aggregare_identity_saved_config.schema_version | default(0) != 2
+        - not aggregare_identity_config_stat.stat.exists or aggregare_identity_saved_config.schema_version | default(0) != 3
 
     - name: Persist external OIDC or none selection
       ansible.builtin.copy:
@@ -317,11 +568,29 @@
             method: GET
             status_code: 200
             validate_certs: true
-            ca_path: "{{ identity_preflight_cafile | default(omit) }}"
+            ca_path: "{{ aggregare_kanidm_dev_ca_target if aggregare_kanidm_tls_mode_effective == 'development' else identity_preflight_cafile | default(omit) }}"
           register: aggregare_kanidm_health
           retries: 30
           delay: 5
           until: aggregare_kanidm_health.status == 200
+
+        - name: Read development certificate SHA-256 fingerprint
+          ansible.builtin.command:
+            argv: [openssl, x509, -in, "{{ aggregare_kanidm_dev_ca_target }}", -noout, -fingerprint, -sha256]
+          register: aggregare_kanidm_dev_tls_fingerprint
+          changed_when: false
+          when: aggregare_kanidm_tls_mode_effective == 'development'
+
+        - name: Explain development certificate trust requirements
+          ansible.builtin.debug:
+            msg: >-
+              DEVELOPMENT ONLY: Kanidm generated a self-signed evaluation certificate. It is not publicly trusted.
+              SHA-256 fingerprint: {{ aggregare_kanidm_dev_tls_fingerprint.stdout }}.
+              The public CA certificate is at {{ aggregare_kanidm_dev_ca_target }}. To trust it on a Linux client,
+              copy that public file to /usr/local/share/ca-certificates/aggregare-kanidm-dev.crt and run
+              sudo update-ca-certificates. Import only the public certificate; never copy key.pem to a client.
+              Browsers and other operating systems need the equivalent explicit trust-store import.
+          when: aggregare_kanidm_tls_mode_effective == 'development'
 
     - name: Report effective identity configuration
       ansible.builtin.debug:

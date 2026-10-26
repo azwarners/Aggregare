@@ -48,24 +48,32 @@ time, identity configuration, and whether the user-facing applications should
 be reachable from the private LAN.
 
 When you select `kanidm`, the installer collects a stable identity FQDN and
-HTTPS origin plus the certificate-chain and matching private-key paths on the
-Ansible controller. It runs DNS and TLS preflight before writing the identity
-configuration or deploying Kanidm. Reapplications use the saved endpoint and
-reject ordinary attempts to change it. `external_oidc` and `none` do not ask
-for Kanidm-specific settings.
+HTTPS origin. The production default asks for a certificate-chain and matching
+private-key path on the Ansible controller. For an explicitly opted-in
+disposable/private development install, pass `--kanidm-development-certificate`
+or select Kanidm's self-signed evaluation certificate when prompted. The
+generated certificate and key stay in persistent Kanidm storage and are reused
+on reapplication; generation refuses a nonempty data directory. Reapplications
+use the saved endpoint and TLS mode and reject ordinary attempts to change
+them. `external_oidc` and `none` do not ask for Kanidm-specific settings.
 
 Before selecting Kanidm, an administrator must configure the chosen DNS name
-to resolve from the server and intended clients, arrange a trusted certificate
-for the hostname, and route HTTPS from the selected origin to the host's local
-Kanidm listener at `127.0.0.1:8443`. For private LANs, a name beneath
+to resolve from the server and intended clients and route HTTPS from the
+selected origin to the host's local Kanidm listener at `127.0.0.1:8443`. For
+production, the administrator also supplies a trusted certificate for the
+hostname. For private LANs, a name beneath
 `home.arpa` can use local DNS and a private CA; install that CA's public root in
 the host/browser/client trust stores and provide its path with
 `--identity-ca-file` when running the installer. For a name under a registered
 domain, a publicly trusted certificate can be used without exposing the
-service publicly. DNS, certificate issuance/renewal, proxy/router/firewall
-rules, and trust-store distribution remain administrator-managed. Validate
-the selected origin from the host and each required client network before
-enrolling accounts.
+service publicly. The development certificate is self-signed and is not
+trusted on other devices until its public certificate is explicitly imported
+into each device's trust store. The installer prints its SHA-256 fingerprint,
+public certificate path, and Linux import steps. Never distribute the private
+key. DNS, production certificate issuance/renewal, proxy/router/firewall rules,
+and development trust-store distribution remain administrator-managed.
+Validate the selected origin from the host and each required client network
+before enrolling accounts.
 
 During installation, Aggregare displays the server's local time, UTC time,
 timezone, and network time synchronization status. Confirm that they are

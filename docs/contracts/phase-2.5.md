@@ -18,21 +18,30 @@ set as SSO-enabled unless each app supports the configured flow.
 
 The durable provider choice is `/etc/aggregare/identity.json`. Version 1
 records `identity_provider` as `kanidm`, `external_oidc`, or `none`. Version 2
-also stores the administrator-selected Kanidm `identity_domain` and
-`identity_origin`. Both `install.sh` and direct Ansible use this same file, and
+stores the administrator-selected Kanidm `identity_domain` and
+`identity_origin`; version 3 also stores the TLS mode (`provided` or
+`development`). Both `install.sh` and direct Ansible use this same file, and
 each host/environment has its own copy. Later installer runs reuse the saved
-provider and endpoint. Established Kanidm domains and origins cannot be changed
-in place; changing them after enrollment requires a planned migration.
+provider, endpoint, and TLS mode. Established Kanidm domains and origins cannot
+be changed in place; changing them after enrollment requires a planned
+migration.
 
 Selecting `kanidm` deploys the pinned `docker.io/kanidm/server:1.11.2` image
 as a Podman Quadlet using UID/GID 1000 and persistent data at
-`/var/lib/aggregare/kanidm`. The administrator supplies a certificate chain
-and matching private key. Aggregare does not create DNS records, issue
-certificates, configure a reverse proxy, open firewall/router ports, or expose
-the service. The configured HTTPS origin must already resolve and present a
-trusted certificate before the service is applied; the site edge should route
-that origin to the local listener on `127.0.0.1:8443`. DNS/TLS preflight runs
-before persistent identity configuration or Kanidm data is changed. Safe
+`/var/lib/aggregare/kanidm`. Production uses an administrator-provided
+certificate chain and matching private key. An explicit development-only
+option invokes the pinned Kanidm image's `kanidmd cert-generate` evaluation
+workflow. Those self-signed files remain persistent and are reused; the
+workflow refuses to generate into a nonempty data directory. Such certificates
+are untrusted on other devices until their public certificate is deliberately
+installed in each device's trust store. The installer reports the SHA-256
+fingerprint and public certificate path and does not distribute the private
+key. Aggregare does not create DNS records, issue production certificates,
+configure a reverse proxy, open firewall/router ports, or expose the service.
+The configured origin must resolve before setup; supplied TLS material is
+validated before deployment, and the live HTTPS endpoint is checked afterward
+with explicitly scoped trust for development certificates. The site edge
+should route that origin to the local listener on `127.0.0.1:8443`. Safe
 reapplication preserves the data directory and restarts the service only when
 its definition, server configuration, or TLS files change.
 
@@ -41,6 +50,9 @@ For direct Ansible Kanidm setup, provide `aggregare_identity_provider=kanidm`,
 `aggregare_kanidm_tls_chain_source`, and `aggregare_kanidm_tls_key_source` in
 protected variables, then run `ansible-playbook -i INVENTORY
 playbooks/phase25-identity-config.yml --become -e @/secure/config/kanidm.json`.
+For an explicitly disposable/private development instance, set
+`aggregare_kanidm_tls_mode=development` instead of supplying certificate
+sources. Do not use that mode for production.
 A private CA bundle can be supplied with `identity_preflight_cafile`; it must
 already be available at that path on the managed host. For `external_oidc` or
 `none`, only the provider choice is required and no Kanidm-specific hostname or
