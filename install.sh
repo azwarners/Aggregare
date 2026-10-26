@@ -323,7 +323,6 @@ elif [[ -e "$INVENTORY_FILE" ]]; then
   fi
 fi
 
-confirm_host_time
 select_identity_provider
 select_llama_cpp_endpoint
 
@@ -344,6 +343,12 @@ if ((${#PACKAGES_TO_INSTALL[@]} > 0)); then
   sudo apt install -y "${PACKAGES_TO_INSTALL[@]}"
 fi
 command -v ansible-playbook >/dev/null 2>&1 || fail "Ansible Core could not be installed."
+ANSIBLE_PLAYBOOK="$(command -v ansible-playbook)"
+
+printf '\nChecking network time synchronization before deployment. If the clock is unsynchronized, Chrony may step it by up to 24 hours after selecting a time source.\n'
+(cd "$ANSIBLE_DIR" && sudo "$ANSIBLE_PLAYBOOK" -i 'localhost,' playbooks/time-sync.yml) || fail "the host clock could not be synchronized. Check Chrony and its configured time sources, then rerun install.sh."
+confirm_host_time
+
 sudo systemctl enable --now ssh
 
 SSH_LAN_ADDRESS=""
@@ -426,14 +431,37 @@ print(json.dumps({
 PY
 )"
 
+ADMIN_HOME="$(getent passwd "$(id -un)" | cut -d: -f6)"
+ADMIN_HOME="${ADMIN_HOME%/}"
+ADMIN_UID="$(id -u)"
+ADMIN_GID="$(id -g)"
+REPORT_EXTRA_VARS="$(python3 - "$AGGREGARE_VERSION" "$LAN_ADDRESS" "$ADMIN_HOME" "$ADMIN_UID" "$ADMIN_GID" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "ansible_become": False,
+    "aggregare_report_version": sys.argv[1],
+    "aggregare_report_bind_address": sys.argv[2],
+    "aggregare_report_admin_home": sys.argv[3],
+    "aggregare_report_admin_uid": sys.argv[4],
+    "aggregare_report_admin_gid": sys.argv[5],
+}))
+PY
+)"
+
 ANSIBLE_VAULT_ARGS=()
 VAULT_VARS_FILE="$ANSIBLE_DIR/group_vars/aggregare/vault.yml"
 if [[ -f "$VAULT_VARS_FILE" ]] && grep -q '^\$ANSIBLE_VAULT;' "$VAULT_VARS_FILE"; then
   ANSIBLE_VAULT_ARGS+=(--ask-vault-pass)
 fi
 
+sudo install -d -o root -g root -m 0755 /var/lib/aggregare
+printf '# Aggregare deployment report refresh in progress\n\nThis file is not a current report. Rerun the installer to complete report generation.\n' | sudo tee /var/lib/aggregare/deployment-report.md >/dev/null
+sudo chown "$ADMIN_UID:$ADMIN_GID" /var/lib/aggregare/deployment-report.md
+sudo chmod 0600 /var/lib/aggregare/deployment-report.md
+
 cd "$ANSIBLE_DIR"
-ANSIBLE_PLAYBOOK="$(command -v ansible-playbook)"
 
 run_playbook_with_progress() {
   local playbook="$1" extra_vars="$2" task_listing task_total
@@ -459,6 +487,22 @@ run_playbook_with_progress() {
     AGGREGARE_TASK_TOTAL="$task_total" \
     AGGREGARE_TASK_OFFSET="$task_offset" \
     "$ANSIBLE_PLAYBOOK" -i inventory.ini "$playbook" --extra-vars "$extra_vars" "$@"
+}
+
+print_deployment_report_summary() {
+  printf '\nDeployment report: /var/lib/aggregare/deployment-report.md\n'
+  printf 'Read the current report from any directory with: aggregare report\n'
+  if [[ -n "$ADMIN_HOME" && -L "$ADMIN_HOME/Aggregare-Report.md" && "$(readlink -- "$ADMIN_HOME/Aggregare-Report.md")" == /var/lib/aggregare/deployment-report.md ]]; then
+    printf 'Home shortcut: %s/Aggregare-Report.md\n' "$ADMIN_HOME"
+  fi
+  aggregare summary
+  if [[ "$LAN_ACCESS" == true ]]; then
+    printf 'If UFW blocks LAN connections, add this LAN-scoped rule for the default applications:\n'
+    for port in 8080 5230 6842 3456; do
+      printf 'sudo ufw allow from %s to %s port %s proto tcp\n' "$LAN_SUBNET" "$LAN_ADDRESS" "$port"
+    done
+    printf 'Do not configure router port forwarding for these applications.\n'
+  fi
 }
 
 IDENTITY_CONFIG_COMPLETE="$(install_state_get identity_config_playbook_complete)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
@@ -588,9 +632,36 @@ PY
     DEFAULT_TASK_OFFSET=$((DEFAULT_TASK_OFFSET + APPLICATION_TASK_COUNT))
   done
   unset TASK_PROGRESS_OFFSET TASK_PROGRESS_TOTAL
-  ((${#APPLICATION_FAILURES[@]} == 0)) || fail "application playbooks failed for: ${APPLICATION_FAILURES[*]}. Rerun the installer after resolving the reported issue."
-  install_state_set default_playbook_complete true || fail "default application setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
-  install_state_set default_playbook_applied_signature "$DEFAULT_PLAYBOOK_SIGNATURE" || fail "default application setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+  if ((${#APPLICATION_FAILURES[@]} == 0)); then
+    install_state_set default_playbook_complete true || fail "default application setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+    install_state_set default_playbook_applied_signature "$DEFAULT_PLAYBOOK_SIGNATURE" || fail "default application setup completed, but progress could not be saved to $INSTALL_STATE_FILE."
+  fi
+
+FAILED_APPLICATIONS_JSON="$(python3 - "${APPLICATION_FAILURES[@]}" -- "${DEFAULT_APPLICATION_PLAYBOOKS[@]}" <<'PY'
+import json
+import sys
+separator = sys.argv.index("--")
+failed = sys.argv[1:separator]
+expected = [name.removesuffix(".yml") for name in sys.argv[separator + 1:]]
+print(json.dumps({
+    "aggregare_report_failed_applications": failed,
+    "aggregare_report_expected_applications": expected,
+}))
+PY
+)"
+REPORT_EXTRA_VARS="$(python3 - "$REPORT_EXTRA_VARS" "$FAILED_APPLICATIONS_JSON" <<'PY'
+import json
+import sys
+settings = json.loads(sys.argv[1])
+settings.update(json.loads(sys.argv[2]))
+print(json.dumps(settings))
+PY
+)"
+if ((${#APPLICATION_FAILURES[@]} > 0)); then
+  run_playbook_with_progress playbooks/report.yml "$REPORT_EXTRA_VARS"
+  print_deployment_report_summary
+  fail "application playbooks failed for: ${APPLICATION_FAILURES[*]}. A current report was generated; resolve the failures and rerun the installer."
+fi
 
 WELCOME_PLAYBOOK_COMPLETE="$(install_state_get welcome_playbook_complete)" || fail "could not read installer progress from $INSTALL_STATE_FILE."
 WELCOME_PLAYBOOK_SIGNATURE="$(printf '%s\n%s' "$AGGREGARE_VERSION" "$PROJECT_ROOT/docs/deployment/aggregare-server.md" | sha256sum | awk '{print $1}')"
@@ -603,21 +674,11 @@ else
   printf 'Welcome playbook already completed; skipping.\n'
 fi
 
+run_playbook_with_progress playbooks/report.yml "$REPORT_EXTRA_VARS"
+
 printf '\nAggregare default application bundle installation finished.\n'
 printf 'The Aggregare login banner is installed; log out and back in to see it.\n'
-if [[ "$LAN_ACCESS" == true ]]; then
-  printf 'User-facing applications on the LAN:\n'
-  printf '  Open WebUI: http://%s:8080/\n  Memos:      http://%s:5230/\n  HabitSync:  http://%s:6842/\n  Vikunja:    http://%s:3456/\n' "$LAN_ADDRESS" "$LAN_ADDRESS" "$LAN_ADDRESS" "$LAN_ADDRESS"
-  printf 'If UFW blocks LAN connections, add this LAN-scoped rule:\n'
-  for port in 8080 5230 6842 3456; do
-    printf 'sudo ufw allow from %s to %s port %s proto tcp\n' "$LAN_SUBNET" "$LAN_ADDRESS" "$port"
-  done
-  printf 'Do not configure router port forwarding for this application.\n'
-else
-  printf 'User-facing applications on this server:\n'
-  printf '  Open WebUI: http://127.0.0.1:8080/\n  Memos:      http://127.0.0.1:5230/\n  HabitSync:  http://127.0.0.1:6842/\n  Vikunja:    http://127.0.0.1:3456/\n'
-fi
-printf 'Ysparr API: http://127.0.0.1:8000/v1. Apmatia core API: http://127.0.0.1:8001 (loopback only).\n'
+print_deployment_report_summary
 printf 'Open WebUI sign-up remains enabled for first use: create the first administrator account in the browser, then immediately disable sign-up in Admin Panel > Settings. Until then, allow access only from trusted clients.\n'
 printf 'Open WebUI is preconfigured to use Ysparr only. If models do not appear immediately, reopen the model selector or save the Ysparr connection in Admin Panel > Settings > Connections, then refresh the page.\n'
 printf 'On a fresh install, Apmatia first-user credentials are stored root-only at /etc/aggregare/apmatia-credentials.json; retrieve with sudo cat and keep a protected backup.\n'
@@ -625,4 +686,4 @@ printf 'Apmatia publishes its five starter agents to Ysparr during fresh first-u
 printf 'For a redacted AI-chat status report, run: sudo ./tools/aggregare-ai-chat-diagnose\n'
 printf 'Lifecycle, network, backup/restore, and VM smoke-check steps: docs/deployment/aggregare-ai-chat-operations.md\n'
 printf 'HabitSync local login is stored root-only at /etc/aggregare/habitsync-credentials; retrieve it with sudo cat and rotate it after first sign-in.\n'
-printf 'AI chat upstream: %s (checked at /v1/models). Reapply the default playbook to update it; the value is saved in /etc/aggregare/ysparr-upstream.json.\n' "$LLAMA_CPP_URL"
+printf 'Reapply the default playbook to update the AI chat upstream; its configuration is saved in /etc/aggregare/ysparr-upstream.json.\n'

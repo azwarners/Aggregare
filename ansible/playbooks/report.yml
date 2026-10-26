@@ -1,0 +1,6 @@
+---
+- name: Generate the Aggregare deployment report
+  hosts: aggregare
+  become: true
+  roles:
+    - aggregare_report

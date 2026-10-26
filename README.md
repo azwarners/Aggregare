@@ -8,6 +8,10 @@
 
 For a current checkout, review [the Ubuntu Server deployment guide](docs/deployment/aggregare-server.md), then run `./install.sh` on a suitable Ubuntu Server test host. It installs the default applications together; later additions to that baseline are additive. The installer asks for a reachable external OpenAI-compatible llama.cpp endpoint; Aggregare does not download models or install an inference server. Apmatia runs locally with persistent state and publishes its five prompt-only starter agents through Ysparr. Prefer a disposable VM for initial evaluation; review the playbooks and inventory before applying changes.
 
+After installation, read the persistent deployment report from any directory with `aggregare report`. The authoritative Markdown report is `/var/lib/aggregare/deployment-report.md`; interactive installs also create `~/Aggregare-Report.md` when available. See the [deployment report guide](docs/deployment/deployment-report.md).
+
+Change the HabitSync local password from your home directory with `cd ~/Aggregare && ./tools/aggregare-habitsync-password`. It prompts without echoing the password, updates the service and protected credential file, and refreshes the deployment report.
+
 
 Aggregare composes independently useful applications and infrastructure tools into one coherent platform.
 

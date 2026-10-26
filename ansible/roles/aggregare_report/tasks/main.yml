@@ -1,0 +1,114 @@
+---
+- name: Ensure the Aggregare report directory is readable
+  ansible.builtin.file:
+    path: /var/lib/aggregare
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Mark the previous report as refreshing before report role work
+  ansible.builtin.copy:
+    content: "# Aggregare deployment report refresh in progress\n\nThis file is not a current report. Rerun the installer or reporting playbook to complete report generation.\n"
+    dest: "{{ aggregare_report_path }}"
+    owner: "{{ aggregare_report_admin_uid }}"
+    group: "{{ aggregare_report_admin_gid }}"
+    mode: '0600'
+
+- name: Create report tool and catalog parent directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /usr/local/lib/aggregare
+    - "{{ aggregare_report_catalog_path }}"
+
+- name: Install the report generator
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../../../tools/aggregare-report.py"
+    dest: /usr/local/lib/aggregare/aggregare-report.py
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the report command
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../../../tools/aggregare"
+    dest: /usr/local/bin/aggregare
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the application catalog for report reconstruction
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../../../catalog/v1/"
+    dest: "{{ aggregare_report_catalog_path }}/"
+    owner: root
+    group: root
+    mode: preserve
+
+- name: Generate a fresh deployment report from installed status and observed services
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /usr/local/lib/aggregare/aggregare-report.py
+      - generate
+      - --catalog
+      - "{{ aggregare_report_catalog_path }}"
+      - --status-dir
+      - "{{ aggregare_report_status_dir }}"
+      - --output
+      - "{{ aggregare_report_path }}"
+      - --hostname
+      - "{{ ansible_facts.hostname | default('') }}"
+      - --addresses
+      - "{{ (ansible_facts.all_ipv4_addresses | default([])) | join(',') }}"
+      - --version
+      - "{{ aggregare_report_version }}"
+      - --bind-address
+      - "{{ aggregare_report_bind_address }}"
+      - --loopback-apps
+      - "{{ aggregare_report_loopback_applications | join(',') }}"
+      - --expected-apps
+      - "{{ aggregare_report_expected_applications | join(',') }}"
+      - --failed-apps
+      - "{{ aggregare_report_failed_applications | join(',') }}"
+  changed_when: true
+
+- name: Restrict the credential-bearing report to its designated administrator
+  ansible.builtin.file:
+    path: "{{ aggregare_report_path }}"
+    state: file
+    owner: "{{ aggregare_report_admin_uid }}"
+    group: "{{ aggregare_report_admin_gid }}"
+    mode: '0600'
+
+- name: Inspect the administrator report shortcut
+  ansible.builtin.stat:
+    path: "{{ aggregare_report_admin_home }}/Aggregare-Report.md"
+    follow: false
+  register: aggregare_report_shortcut
+  when: aggregare_report_admin_home | length > 0
+
+- name: Create the administrator report shortcut when the path is unused or already correct
+  ansible.builtin.file:
+    src: "{{ aggregare_report_path }}"
+    dest: "{{ aggregare_report_admin_home }}/Aggregare-Report.md"
+    state: link
+    owner: "{{ aggregare_report_admin_uid }}"
+    group: "{{ aggregare_report_admin_gid }}"
+    force: false
+  when:
+    - aggregare_report_admin_home | length > 0
+    - not aggregare_report_shortcut.stat.exists | default(false) or (aggregare_report_shortcut.stat.islnk | default(false) and aggregare_report_shortcut.stat.lnk_source | default('') == aggregare_report_path)
+
+- name: Explain when an existing home path prevented creation of the report shortcut
+  ansible.builtin.debug:
+    msg: "{{ aggregare_report_admin_home }}/Aggregare-Report.md already exists and was left untouched. Read the report with: aggregare report"
+  when:
+    - aggregare_report_admin_home | length > 0
+    - aggregare_report_shortcut.stat.exists | default(false)
+    - not (aggregare_report_shortcut.stat.islnk | default(false) and aggregare_report_shortcut.stat.lnk_source | default('') == aggregare_report_path)

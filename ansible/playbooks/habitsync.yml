@@ -12,6 +12,7 @@
     application_container_data_path: /data
     application_data_owner: '6842'
     application_data_group: '6842'
+    habitsync_effective_recovery_user: "{{ habitsync_recovery_user | default(lookup('env', 'SUDO_USER') | default('aggregare', true)) }}"
     application_system_ca_bundle: true
     application_java_trust_store: true
     application_add_hosts: "{{ aggregare_phase25_add_hosts | default([]) }}"
@@ -42,9 +43,7 @@
         {{ {
           'app': {
             'security': {
-              'basic-auth': {
-                'users': { (habitsync_recovery_user | default('aggregare')): habitsync_recovery_password_hash }
-              }
+              'basic-auth-users': { (habitsync_effective_recovery_user): habitsync_recovery_password_hash }
             }
           }
         } | to_json(separators=[',', ':']) }}
@@ -55,7 +54,7 @@
         that:
           - (habitsync_base_url | default('http://' ~ application_bind_address ~ ':6842')) is match('^https?://')
           - (habitsync_base_url | default('http://' ~ application_bind_address ~ ':6842')) is not match('/$')
-          - habitsync_recovery_user | default('aggregare') is match('^[a-z0-9][a-z0-9-]{0,35}$')
+          - habitsync_effective_recovery_user is match('^[a-z0-9][a-z0-9-]{0,35}$')
         fail_msg: HabitSync needs a valid base URL and local recovery account name.
       when: application_state | default('present') == 'present'
 
@@ -152,7 +151,7 @@
 
     - name: Create the HabitSync local recovery password hash
       ansible.builtin.command:
-        argv: [htpasswd, -niBC, '10', "{{ habitsync_recovery_user | default('aggregare') }}"]
+        argv: [htpasswd, -niBC, '10', "{{ habitsync_effective_recovery_user }}"]
         stdin: "{{ habitsync_recovery_password }}"
       register: habitsync_password_hash_result
       changed_when: false
@@ -172,7 +171,7 @@
     - name: Store the initial HabitSync login for the administrator
       ansible.builtin.copy:
         dest: /etc/aggregare/habitsync-credentials
-        content: "username={{ habitsync_recovery_user | default('aggregare') }}\npassword={{ habitsync_recovery_password }}\n"
+        content: "username={{ habitsync_effective_recovery_user }}\npassword={{ habitsync_recovery_password }}\n"
         owner: root
         group: root
         mode: '0600'

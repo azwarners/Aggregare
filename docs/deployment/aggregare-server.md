@@ -47,19 +47,23 @@ The installer always installs the default bundle. It asks you to confirm host
 time, identity configuration, and whether the user-facing applications should
 be reachable from the private LAN.
 
-During installation, Aggregare displays the server's local time, UTC time,
-timezone, and network time synchronization status. Confirm that they are
-correct before application deployment. If the timezone is wrong, enter its
+Before deployment, Aggregare checks the host's network time synchronization.
+If the clock is not synchronized, it enables Chrony, waits for a synchronized
+time source, and steps the clock when the remaining correction exceeds one
+second and is under 24 hours. Review the selected Chrony source if the
+correction is larger; the installer stops rather than making that change.
+Aggregare then displays the server's local time, UTC time, timezone, and
+synchronization status for confirmation. If the timezone is wrong, enter its
 IANA name (for example, `America/Phoenix`); the installer applies it and asks
-you to confirm again. Installation stops if the system clock is not synchronized.
-On Ubuntu, inspect or enable time synchronization with `timedatectl status` and
-`sudo timedatectl set-ntp true`, then rerun the installer. Aggregare's managed
-Podman containers use the host timezone.
+you to confirm again. If time synchronization cannot be established, inspect
+`timedatectl status`, `chronyc tracking`, and `chronyc sources -v`, then rerun
+the installer. Aggregare's managed Podman containers use the host timezone.
 
 The script checks for Ubuntu 26.04, installs Ansible Core and OpenSSH Server
-if needed, starts SSH, and applies the default playbook locally on this same
-server using a localhost inventory. A separate control machine or SSH connection is
-not needed for this first install. If UFW is already active, the installer
+if needed, synchronizes and confirms host time, starts SSH, and applies the
+default playbook locally on this same server using a localhost inventory. A
+separate control machine or SSH connection is not needed for this first
+install. If UFW is already active, the installer
 allows SSH only from the server's private LAN subnet; it does not enable UFW.
 The script prints an SSH command for later terminal access from another
 computer. It asks whether the user-facing applications should be reachable by
@@ -95,9 +99,11 @@ its SQLite database in `/var/lib/ysparr/`. Apmatia runs as
 `apmatia-core.service`, bound to loopback on port 8001, with state in
 `/var/lib/apmatia/{app,data,config}`. On a fresh install, Aggregare creates the
 first Apmatia account and saves its password at
-`/etc/aggregare/apmatia-credentials.json` with root-only permissions. Retrieve
-it with `sudo cat /etc/aggregare/apmatia-credentials.json` and keep a protected
-backup. Reapply logs in with that account; if an existing database has no saved
+`/etc/aggregare/apmatia-credentials.json` with root-only permissions. The
+deployment report includes the generated username and password and is readable
+only by the installing administrator. Retrieve the credential file with
+`sudo cat /etc/aggregare/apmatia-credentials.json` if needed, and keep protected
+backups of both. Reapply logs in with that account; if an existing database has no saved
 credentials, Aggregare leaves its users alone and reports that manual setup is
 needed. Apmatia's supported one-time bootstrap publishes its five bundled
 prompt-only starters with a backing model from the selected upstream. Ysparr
@@ -163,9 +169,12 @@ of those features, so do not treat them as part of this integration or enable
 them without separately configuring and securing them. No Open WebUI plugin,
 pipeline, RAG, or custom agent content is installed by Aggregare.
 
-HabitSync receives a
-generated local login; read it with `sudo cat /etc/aggregare/habitsync-credentials`
-and change it after the first sign-in. Back up this credentials file and
+HabitSync receives a generated local login using the account that ran the
+installer as its username; read it with `sudo cat /etc/aggregare/habitsync-credentials`
+to see the current login. To choose a memorable password or change it later,
+run `cd ~/Aggregare && ./tools/aggregare-habitsync-password` from your home directory. It prompts without
+echoing the password, applies it to the service, updates the protected
+credentials file, and refreshes the deployment report. Back up this credentials file and
 `/etc/aggregare/secrets/habitsync-jwt` with the applications' data. If you use
 an upstream API key, back up `/etc/aggregare/ysparr-upstream.json` as well.
 

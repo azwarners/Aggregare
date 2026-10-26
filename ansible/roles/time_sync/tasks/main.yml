@@ -1,0 +1,112 @@
+---
+- name: Read current network time synchronization status
+  ansible.builtin.command:
+    argv:
+      - timedatectl
+      - show
+      - --property=NTPSynchronized
+      - --value
+  register: aggregare_time_sync_initial
+  changed_when: false
+
+- name: Ensure Chrony is installed when the clock is not synchronized
+  ansible.builtin.apt:
+    name: chrony
+    state: present
+  when: aggregare_time_sync_initial.stdout | trim != 'yes'
+
+- name: Ensure Chrony is enabled and running when synchronization is needed
+  ansible.builtin.systemd_service:
+    name: chrony
+    enabled: true
+    state: started
+  when: aggregare_time_sync_initial.stdout | trim != 'yes'
+
+- name: Wait for Chrony to select and synchronize with a time source
+  ansible.builtin.command:
+    argv:
+      - chronyc
+      - waitsync
+      - '30'
+  changed_when: false
+  timeout: 310
+  when: aggregare_time_sync_initial.stdout | trim != 'yes'
+
+- name: Read Chrony's synchronization state
+  ansible.builtin.command:
+    argv:
+      - chronyc
+      - tracking
+  register: aggregare_chrony_tracking
+  changed_when: false
+  when: aggregare_time_sync_initial.stdout | trim != 'yes'
+
+- name: Require Chrony to have a synchronized source
+  ansible.builtin.assert:
+    that:
+      - aggregare_chrony_tracking.stdout is search('Leap status\\s*:\\s*Normal')
+    fail_msg: Chrony has not synchronized to a valid time source. Check its configured sources and network access.
+  when: aggregare_time_sync_initial.stdout | trim != 'yes'
+
+- name: Read Chrony's remaining clock correction
+  ansible.builtin.command:
+    argv:
+      - awk
+      - '/^System time/ {print $4; exit}'
+      - /dev/stdin
+    stdin: "{{ aggregare_chrony_tracking.stdout }}"
+  register: aggregare_chrony_offset
+  changed_when: false
+  when: aggregare_time_sync_initial.stdout | trim != 'yes'
+
+- name: Require a bounded clock correction before stepping
+  ansible.builtin.assert:
+    that:
+      - aggregare_chrony_offset.stdout is match('^[0-9]+(\\.[0-9]+)?$')
+      - aggregare_chrony_offset.stdout | float < 86400
+    fail_msg: Chrony's remaining correction is missing or exceeds 24 hours. Review the selected time source before correcting the host clock.
+  when: aggregare_time_sync_initial.stdout | trim != 'yes'
+
+- name: Correct a large clock offset after Chrony synchronization
+  ansible.builtin.command:
+    argv:
+      - chronyc
+      - makestep
+  register: aggregare_chrony_step
+  changed_when: true
+  when:
+    - aggregare_time_sync_initial.stdout | trim != 'yes'
+    - aggregare_chrony_offset.stdout | float > 1
+
+- name: Wait for the corrected clock to converge
+  ansible.builtin.command:
+    argv:
+      - chronyc
+      - waitsync
+      - '30'
+      - '1'
+  changed_when: false
+  timeout: 310
+  when: aggregare_time_sync_initial.stdout | trim != 'yes'
+
+- name: Confirm systemd reports the host clock synchronized
+  ansible.builtin.command:
+    argv:
+      - timedatectl
+      - show
+      - --property=NTPSynchronized
+      - --value
+  register: aggregare_time_sync_final
+  changed_when: false
+  until: aggregare_time_sync_final.stdout | trim == 'yes'
+  retries: 12
+  delay: 5
+
+- name: Report the synchronized host clock
+  ansible.builtin.debug:
+    msg: >-
+      Host clock synchronization is active. Chrony corrected the system clock
+      with a step when the remaining offset exceeded one second.
+  when:
+    - aggregare_time_sync_initial.stdout | trim != 'yes'
+    - aggregare_chrony_step is changed
