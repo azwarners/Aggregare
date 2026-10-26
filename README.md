@@ -10,7 +10,7 @@ For a current checkout, review [the Ubuntu Server deployment guide](docs/deploym
 
 After installation, read the persistent deployment report from any directory with `aggregare report`. The authoritative Markdown report is `/var/lib/aggregare/deployment-report.md`; interactive installs also create `~/Aggregare-Report.md` when available. See the [deployment report guide](docs/deployment/deployment-report.md).
 
-Change the HabitSync local password from your home directory with `cd ~/Aggregare && ./tools/aggregare-habitsync-password`. It prompts without echoing the password, updates the service and protected credential file, and refreshes the deployment report.
+Change the HabitSync local password from your home directory with `cd ~/Aggregare && ./tools/aggregare-habitsync-password`. It prompts without echoing the password, preserves the installer's LAN setting, updates the service and protected credential file, and refreshes the deployment report.
 
 
 Aggregare composes independently useful applications and infrastructure tools into one coherent platform.

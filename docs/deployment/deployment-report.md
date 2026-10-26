@@ -4,7 +4,7 @@ The installer generates a current report at `/var/lib/aggregare/deployment-repor
 
 The report contains sensitive credentials. The installer sets it to mode `0600` and makes the installing administrator its owner so `aggregare report` works for that account. Keep the report and any backups protected. `aggregare summary` shows service status and endpoints without displaying login credentials.
 
-The HabitSync section includes the password-change command. From your home directory, run `cd ~/Aggregare && ./tools/aggregare-habitsync-password`; it prompts twice without echoing the password, applies the new login, updates the protected credential file, and refreshes this report.
+The HabitSync section includes the password-change command. From your home directory, run `cd ~/Aggregare && ./tools/aggregare-habitsync-password`; it prompts twice without echoing the password, applies the new login while preserving the installer's saved LAN access and base URL, updates the protected credential file, and refreshes this report.
 
 Read it from any working directory with:
 
