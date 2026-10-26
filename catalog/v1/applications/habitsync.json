@@ -84,7 +84,7 @@
     },
     "token_lifecycle": ["generate", "revoke", "unknown"],
     "manual_steps": [
-      "Retrieve the generated local login from /etc/aggregare/habitsync-credentials and change it after first sign-in.",
+      "Retrieve the current local login from /etc/aggregare/habitsync-credentials. From your home directory, run cd ~/Aggregare && ./tools/aggregare-habitsync-password; it prompts privately, applies the password, and refreshes the deployment report.",
       "When OIDC is configured, register a public client with the selected provider using the exact HabitSync HTTPS callback URL.",
       "When OIDC is configured, approve the first OIDC user in HabitSync if new-user approval is enabled.",
       "Create and revoke API tokens in the user's profile when integrations need them."

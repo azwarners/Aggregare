@@ -1,0 +1,8 @@
+---
+- name: Synchronize the Aggregare host clock
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  roles:
+    - time_sync

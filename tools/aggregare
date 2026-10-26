@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+  report)
+    [ "$#" -eq 1 ] || { echo "Usage: aggregare report | summary" >&2; exit 2; }
+    action=report
+    ;;
+  summary)
+    [ "$#" -eq 1 ] || { echo "Usage: aggregare report | summary" >&2; exit 2; }
+    action=summary
+    ;;
+  *)
+    echo "Usage: aggregare report | summary" >&2
+    exit 2
+    ;;
+esac
+    script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+    generator=/usr/local/lib/aggregare/aggregare-report.py
+    [ -r "$generator" ] || generator="$script_dir/aggregare-report.py"
+    exec python3 "$generator" "$action"

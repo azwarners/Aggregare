@@ -16,3 +16,4 @@
 - import_playbook: beszel.yml
 - import_playbook: grafana.yml
 - import_playbook: troubleshell.yml
+- import_playbook: report.yml

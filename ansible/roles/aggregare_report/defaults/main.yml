@@ -1,0 +1,14 @@
+---
+aggregare_report_path: /var/lib/aggregare/deployment-report.md
+aggregare_report_status_dir: /var/lib/aggregare/status
+aggregare_report_catalog_path: /usr/local/share/aggregare/catalog/v1
+aggregare_report_admin_home: ""
+aggregare_report_admin_uid: "0"
+aggregare_report_admin_gid: "0"
+aggregare_report_bind_address: ""
+aggregare_report_failed_applications: []
+aggregare_report_expected_applications: []
+aggregare_report_loopback_applications:
+  - ysparr
+  - apmatia
+aggregare_report_version: unknown
