@@ -170,12 +170,13 @@ them without separately configuring and securing them. No Open WebUI plugin,
 pipeline, RAG, or custom agent content is installed by Aggregare.
 
 HabitSync receives a generated local login using the account that ran the
-installer as its username; read it with `sudo cat /etc/aggregare/habitsync-credentials`
-to see the current login. To choose a memorable password or change it later,
-run `cd ~/Aggregare && ./tools/aggregare-habitsync-password` from your home directory. It prompts without
-echoing the password, applies it to the service, updates the protected
-credentials file, and refreshes the deployment report. Back up this credentials file and
-`/etc/aggregare/secrets/habitsync-jwt` with the applications' data. If you use
+installer as its username; the initial login appears in the deployment report.
+To choose a personal password or change it later, run
+`cd ~/Aggregare && ./tools/aggregare-habitsync-password` from your home directory.
+It prompts without echoing the password, applies it to the service, removes the
+superseded initial login handoff, and refreshes the deployment report without
+recording the new password. Back up `/etc/aggregare/secrets/habitsync-jwt`
+with the applications' data. If you use
 an upstream API key, back up `/etc/aggregare/ysparr-upstream.json` as well.
 
 The same additive default bundle can be applied or reapplied through Ansible.

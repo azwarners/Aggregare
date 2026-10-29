@@ -102,6 +102,12 @@
         - habitsync_jwt_secret is not defined
       no_log: true
 
+    - name: Check for a saved HabitSync password hash
+      ansible.builtin.stat:
+        path: /etc/aggregare/secrets/habitsync-password-hash
+      register: habitsync_password_hash_file
+      when: application_state | default('present') == 'present'
+
     - name: Create a stable HabitSync local login password when none is configured
       ansible.builtin.shell:
         cmd: "umask 077; test -s /etc/aggregare/secrets/habitsync-password || openssl rand -hex 24 > /etc/aggregare/secrets/habitsync-password"
@@ -110,6 +116,26 @@
       when:
         - application_state | default('present') == 'present'
         - habitsync_recovery_password is not defined
+        - habitsync_recovery_password_hash is not defined
+        - not habitsync_password_hash_file.stat.exists
+      no_log: true
+
+    - name: Read the saved HabitSync password hash
+      ansible.builtin.slurp:
+        src: /etc/aggregare/secrets/habitsync-password-hash
+      register: habitsync_saved_password_hash
+      when:
+        - application_state | default('present') == 'present'
+        - habitsync_password_hash_file.stat.exists
+        - habitsync_recovery_password_hash is not defined
+      no_log: true
+
+    - name: Set the saved HabitSync password hash for this run
+      ansible.builtin.set_fact:
+        habitsync_recovery_password_hash: "{{ habitsync_saved_password_hash.content | b64decode | trim }}"
+      when:
+        - application_state | default('present') == 'present'
+        - habitsync_password_hash_file.stat.exists
         - habitsync_recovery_password_hash is not defined
       no_log: true
 
@@ -130,6 +156,7 @@
         - application_state | default('present') == 'present'
         - habitsync_recovery_password is not defined
         - habitsync_recovery_password_hash is not defined
+        - not habitsync_password_hash_file.stat.exists
       no_log: true
 
     - name: Set the generated HabitSync signing secret for this run
@@ -147,6 +174,7 @@
         - application_state | default('present') == 'present'
         - habitsync_recovery_password is not defined
         - habitsync_recovery_password_hash is not defined
+        - not habitsync_password_hash_file.stat.exists
       no_log: true
 
     - name: Create the HabitSync local recovery password hash
@@ -177,7 +205,8 @@
         mode: '0600'
       when:
         - application_state | default('present') == 'present'
-        - habitsync_recovery_password is defined
+        - habitsync_generated_password is defined
+        - habitsync_generated_password is not skipped
       no_log: true
 
     - name: Validate optional HabitSync OIDC configuration

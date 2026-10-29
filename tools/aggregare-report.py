@@ -17,6 +17,7 @@ from urllib.parse import urlsplit, urlunsplit
 REPORT_PATH = Path(os.environ.get("AGGREGARE_REPORT_PATH", "/var/lib/aggregare/deployment-report.md"))
 STATUS_PATH = Path("/var/lib/aggregare/status")
 CATALOG_PATH = Path("/usr/local/share/aggregare/catalog/v1")
+HABITSYNC_PASSWORD_ROTATED_MARKER = Path("/etc/aggregare/habitsync-password-rotated")
 LOCAL_CREDENTIAL_FORMATS = {
     "/etc/aggregare/apmatia-credentials.json": "json",
     "/etc/aggregare/habitsync-credentials": "key_value",
@@ -183,12 +184,15 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
                     variable = credential_reference.removeprefix("ansible-vault:")
                     lines.append(f"- Admin password source: Ansible Vault variable `{variable}` in `ansible/group_vars/aggregare/vault.yml`.")
                 else:
-                    credentials = load_initial_credentials(credential_reference)
+                    credentials = None if (
+                        credential_reference == "/etc/aggregare/habitsync-credentials"
+                        and HABITSYNC_PASSWORD_ROTATED_MARKER.exists()
+                    ) else load_initial_credentials(credential_reference)
                     if credentials:
                         lines.append(f"- Initial login username: `{credentials['username']}`")
                         lines.append(f"- Initial login password: `{credentials['password']}`")
                     else:
-                        lines.append(f"- Initial login details: read `{credential_reference}` with `sudo cat`; credentials were unavailable when this report was generated.")
+                        lines.append("- Initial login details: unavailable in this report; use the application's password recovery or change process.")
         for step in auth.get("manual_steps", []):
             if isinstance(step, str) and step:
                 lines.append(f"- First-run / manual step: {step}")
@@ -206,7 +210,7 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
         "- Aggregare configuration directory: `/etc/aggregare` (may contain secrets; keep protected).",
         "- Application status records: `/var/lib/aggregare/status`.",
         "- Service logs: use the `journalctl` examples above.",
-        "- This report contains initial application credentials and is restricted to its designated administrator; keep copies and backups protected.",
+        "- This report may contain initial application credentials and is restricted to its designated administrator; keep copies and backups protected.",
         "", "This report lists configured endpoints and observed local service state. It does not establish remote reachability.", "",
     ])
     return "\n".join(lines)
