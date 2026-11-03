@@ -19,6 +19,9 @@ KANIDM_DEVELOPMENT_CERTIFICATE=false
 KANIDM_TLS_MODE=""
 IDENTITY_CA_FILE=""
 LLAMA_CPP_URL=""
+CHAT_MODEL=""
+CODING_LLM_URL=""
+CODING_MODEL=""
 LAN_ACCESS=""
 LEGACY_RESUME=false
 
@@ -64,12 +67,27 @@ while (($#)); do
       LLAMA_CPP_URL="$2"
       shift 2
       ;;
+    --chat-model)
+      (($# >= 2)) || { printf 'Installer stopped: --chat-model needs a model ID.\n' >&2; exit 2; }
+      CHAT_MODEL="$2"
+      shift 2
+      ;;
+    --coding-llm-url)
+      (($# >= 2)) || { printf 'Installer stopped: --coding-llm-url needs an http:// or https:// OpenAI-compatible server base URL.\n' >&2; exit 2; }
+      CODING_LLM_URL="$2"
+      shift 2
+      ;;
+    --coding-model)
+      (($# >= 2)) || { printf 'Installer stopped: --coding-model needs a model ID.\n' >&2; exit 2; }
+      CODING_MODEL="$2"
+      shift 2
+      ;;
     --reset-progress)
       RESET_INSTALL_PROGRESS=true
       shift
       ;;
     --help|-h)
-      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--identity-domain FQDN --identity-origin HTTPS_URL (--kanidm-tls-chain FILE --kanidm-tls-key FILE | --kanidm-development-certificate)] [--identity-ca-file FILE] [--llama-cpp-url URL] [--reset-progress]\n'
+      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--identity-domain FQDN --identity-origin HTTPS_URL (--kanidm-tls-chain FILE --kanidm-tls-key FILE | --kanidm-development-certificate)] [--identity-ca-file FILE] [--llama-cpp-url URL] [--chat-model ID --coding-llm-url URL --coding-model ID] [--reset-progress]\n'
       exit 0
       ;;
     *) printf 'Installer stopped: unknown option: %s\n' "$1" >&2; exit 2 ;;
@@ -309,6 +327,51 @@ PY
   install_state_set llama_cpp_url "$LLAMA_CPP_URL" || fail "could not save installer progress to $INSTALL_STATE_FILE."
 }
 
+select_llm_models() {
+  local saved_chat="" saved_coding_url="" saved_coding_model="" has_saved_config=false config_file=/etc/aggregare/ysparr-upstream.json
+  if sudo test -r "$config_file"; then
+    has_saved_config=true
+    readarray -t saved_targets < <(sudo python3 - "$config_file" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+for key in ("ysparr_chat_model", "ysparr_coding_base_url", "ysparr_coding_model"):
+    print(data.get(key, ""))
+PY
+    ) || fail "the saved Ysparr upstream configuration is invalid; review $config_file."
+    saved_chat="${saved_targets[0]:-}"; saved_coding_url="${saved_targets[1]:-}"; saved_coding_model="${saved_targets[2]:-}"
+  fi
+  if [[ -z "$CHAT_MODEL" && -z "$CODING_LLM_URL" && -z "$CODING_MODEL" ]]; then
+    if [[ -n "$saved_chat" && -n "$saved_coding_url" && -n "$saved_coding_model" ]]; then
+      CHAT_MODEL="$saved_chat"; CODING_LLM_URL="$saved_coding_url"; CODING_MODEL="$saved_coding_model"
+      printf 'Reusing saved chat and coding model targets.\n'
+      return
+    fi
+    # Keep existing one-endpoint installations on the legacy path unless an
+    # operator explicitly supplies dual-target settings.
+    [[ "$has_saved_config" == true ]] && return
+    if [[ ! -t 0 ]]; then
+      # Old one-endpoint installations remain valid when reapplied unattended.
+      return
+    fi
+  fi
+  [[ -t 0 ]] || fail "configure --chat-model, --coding-llm-url, and --coding-model together."
+  CHAT_MODEL="${CHAT_MODEL:-$saved_chat}"
+  while [[ -z "$CHAT_MODEL" || "$CHAT_MODEL" =~ [[:space:]] ]]; do
+    read -r -p "Chat model ID${CHAT_MODEL:+ [$CHAT_MODEL]}: " candidate
+    CHAT_MODEL="${candidate:-$CHAT_MODEL}"
+  done
+  CODING_LLM_URL="${CODING_LLM_URL:-$saved_coding_url}"
+  while [[ -z "$CODING_LLM_URL" ]]; do
+    read -r -p "Coding endpoint URL (http(s)://HOST:PORT): " CODING_LLM_URL
+  done
+  CODING_MODEL="${CODING_MODEL:-$saved_coding_model}"
+  while [[ -z "$CODING_MODEL" || "$CODING_MODEL" =~ [[:space:]] ]]; do
+    read -r -p "Coding model ID${CODING_MODEL:+ [$CODING_MODEL]}: " candidate
+    CODING_MODEL="${candidate:-$CODING_MODEL}"
+  done
+}
+
 confirm_host_time() {
   local timezone current_timezone ntp_synchronized time_confirmed
 
@@ -415,6 +478,7 @@ fi
 select_identity_provider
 select_kanidm_endpoint
 select_llama_cpp_endpoint
+select_llm_models
 
 printf '\nAggregare Server v%s bootstrap\n' "$AGGREGARE_VERSION"
 printf 'The default operating-system bundle includes AI chat, Memos, HabitSync, Vikunja, and OpenIPE.\n\n'
@@ -492,7 +556,7 @@ localhost ansible_connection=local
 EOF
 fi
 
-BOOTSTRAP_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" "$LLAMA_CPP_URL" <<'PY'
+BOOTSTRAP_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" "$LLAMA_CPP_URL" "$CHAT_MODEL" "$CODING_LLM_URL" "$CODING_MODEL" <<'PY'
 import json
 import sys
 
@@ -504,6 +568,9 @@ print(json.dumps({
     "vikunja_base_url": f"http://{sys.argv[1]}:3456",
     "aggregare_identity_provider": sys.argv[2],
     "ysparr_upstream_base_url": sys.argv[3],
+    "ysparr_chat_model": sys.argv[4],
+    "ysparr_coding_base_url": sys.argv[5],
+    "ysparr_coding_model": sys.argv[6],
     "ansible_become": False,
 }))
 PY

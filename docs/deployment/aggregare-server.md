@@ -219,25 +219,32 @@ For unattended runs, provide Ansible privilege credentials through your
 inventory's protected secret source and run the same command with `--become`
 without `--ask-become-pass`.
 
-The installer prompts for the llama.cpp base URL and checks `GET /v1/models`
-from the Aggregare host before installing the bundle. Enter the server address
-as `HOST:PORT` (for example `192.168.1.42:8000`) or include `http://` or
-`https://`; a missing scheme defaults to `http://`. A URL ending in `/v1` is
-also accepted. Ysparr stores a normalized root URL and adds `/v1` to API
-requests. The selected URL is saved in
+The installer prompts for the chat endpoint and checks `GET /v1/models`
+from the Aggregare host before installing the bundle. It also collects the
+chat model ID, coding endpoint URL, and coding model ID. The chat endpoint
+continues to serve Open WebUI chats and Apmatia agents. Ysparr lists the
+configured coding model as a separate selectable model; requests using that
+ID go to the coding endpoint. Enter endpoint addresses as `HOST:PORT` (for
+example `192.168.1.42:8000`) or include `http://` or `https://`; a missing
+scheme defaults to `http://`. URLs ending in `/v1` are accepted. Ysparr stores
+normalized root URLs and adds `/v1` to API requests. These values are saved in
 `/etc/aggregare/ysparr-upstream.json` with mode `0640`, owned by root and the
-Ysparr service group. Reapplying the playbook without an endpoint override
-reuses that saved value. The systemd environment file is also protected and
-is the runtime source for Ysparr.
+Ysparr service group. Reapplying without overrides reuses saved values and
+preserves the existing API key. Older saved configurations without coding
+targets continue using their single endpoint. The systemd environment file is
+also protected and is the runtime source for Ysparr.
 
 To supply the endpoint without entering it at the installer prompt, use
-`./install.sh --llama-cpp-url http://HOST:PORT`; host-time, identity, and LAN
+`./install.sh --llama-cpp-url http://HOST:PORT --chat-model CHAT_ID --coding-llm-url http://CODE_HOST:PORT --coding-model CODE_ID`; host-time, identity, and LAN
 prompts still require a terminal. For direct or unattended
-Ansible use, put `ysparr_upstream_base_url` in inventory variables and run
+Ansible use, set `ysparr_upstream_base_url`, `ysparr_chat_model`,
+`ysparr_coding_base_url`, and `ysparr_coding_model` in inventory variables and run
 `ansible-playbook -i INVENTORY playbooks/default.yml --become`; the role
-checks `/v1/models`, configures Ysparr, and persists the endpoint. To change the
-endpoint without reinstalling the stack, reapply
-`playbooks/ysparr.yml --become -e ysparr_upstream_base_url=https://HOST:PORT`.
+checks both `/v1/models` endpoints and verifies the configured model IDs,
+configures Ysparr, and persists the settings. To change an endpoint or model
+without reinstalling the stack, reapply `playbooks/ysparr.yml --become` with
+`-e ysparr_upstream_base_url=https://CHAT_HOST:PORT -e ysparr_chat_model=CHAT_ID
+-e ysparr_coding_base_url=https://CODE_HOST:PORT -e ysparr_coding_model=CODE_ID`.
 
 If the upstream requires an API key, set `ysparr_upstream_api_key` in the
 encrypted `ansible/group_vars/aggregare/vault.yml` (or the matching protected
