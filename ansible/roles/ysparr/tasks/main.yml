@@ -91,10 +91,17 @@
       register: ysparr_upstream_config_file
 
     - name: Read the saved Ysparr upstream configuration
-      ansible.builtin.include_vars:
-        file: "{{ ysparr_upstream_config_path }}"
-        name: ysparr_saved_upstream_config
+      ansible.builtin.slurp:
+        src: "{{ ysparr_upstream_config_path }}"
+      register: ysparr_saved_upstream_config_raw
       when: ysparr_upstream_config_file.stat.exists
+      no_log: true
+
+    - name: Decode the saved Ysparr upstream configuration
+      ansible.builtin.set_fact:
+        ysparr_saved_upstream_config: >-
+          {{ (ysparr_saved_upstream_config_raw.content | b64decode | from_json)
+             if ysparr_upstream_config_file.stat.exists else {} }}
       no_log: true
 
     - name: Select the effective Ysparr upstream settings
@@ -106,6 +113,9 @@
           {{ '' if ysparr_upstream_api_key_reset | bool else
              ((ysparr_upstream_api_key | default('', true) | trim)
              or (ysparr_saved_upstream_config.ysparr_upstream_api_key | default(''))) }}
+        ysparr_chat_model_effective: "{{ ysparr_chat_model | default('', true) | trim or ysparr_saved_upstream_config.ysparr_chat_model | default('') }}"
+        ysparr_coding_model_effective: "{{ ysparr_coding_model | default('', true) | trim or ysparr_saved_upstream_config.ysparr_coding_model | default('') }}"
+        ysparr_coding_base_url_selected: "{{ ysparr_coding_base_url | default('', true) | trim or ysparr_saved_upstream_config.ysparr_coding_base_url | default('') }}"
       no_log: true
 
     - name: Add the default HTTP scheme when the upstream URL omits one
@@ -136,6 +146,56 @@
           {{ ysparr_upstream_base_url_effective | regex_replace('/v1/?$', '') | regex_replace('/+$', '') }}
         ysparr_upstream_models_url: >-
           {{ (ysparr_upstream_base_url_effective | regex_replace('/v1/?$', '') | regex_replace('/+$', '')) }}/v1/models
+        ysparr_coding_base_url_effective: >-
+          {{ ysparr_coding_base_url_selected if '://' in ysparr_coding_base_url_selected
+             else ('http://' ~ ysparr_coding_base_url_selected if ysparr_coding_base_url_selected else '') }}
+      no_log: true
+
+    - name: Validate configured chat and coding model IDs
+      ansible.builtin.assert:
+        that:
+          - >-
+            (ysparr_chat_model_effective | length == 0 and ysparr_coding_model_effective | length == 0 and ysparr_coding_base_url_effective | length == 0)
+            or (ysparr_chat_model_effective | length > 0 and ysparr_chat_model_effective is match('^\S+$')
+            and ysparr_coding_model_effective | length > 0 and ysparr_coding_model_effective is match('^\S+$')
+            and ysparr_coding_base_url_effective | urlsplit('scheme') in ['http', 'https']
+            and ysparr_coding_base_url_effective | urlsplit('hostname') | length > 0
+            and ysparr_coding_base_url_effective | urlsplit('path') in ['', '/', '/v1', '/v1/']
+            and ysparr_coding_base_url_effective | urlsplit('username') | default('', true) | length == 0
+            and ysparr_coding_base_url_effective | urlsplit('password') | default('', true) | length == 0
+            and ysparr_coding_base_url_effective | urlsplit('query') | default('', true) | length == 0
+            and ysparr_coding_base_url_effective | urlsplit('fragment') | default('', true) | length == 0)
+        fail_msg: Configure all chat/coding model settings together with a valid coding endpoint, or leave them empty for a legacy single-upstream install.
+
+    - name: Normalize the coding endpoint URL
+      ansible.builtin.set_fact:
+        ysparr_coding_base_url_normalized: "{{ ysparr_coding_base_url_effective | regex_replace('/v1/?$', '') | regex_replace('/+$', '') }}"
+      no_log: true
+
+    - name: Check the configured coding models endpoint
+      ansible.builtin.uri:
+        url: "{{ ysparr_coding_base_url_normalized }}/v1/models"
+        method: GET
+        status_code: [200, 401, 403, 404]
+        return_content: true
+        timeout: 8
+        validate_certs: true
+      register: ysparr_coding_models_probe
+      failed_when: false
+      retries: 12
+      delay: 20
+      until: ysparr_coding_models_probe.status | default(0) | int in [200, 401, 403, 404]
+      when: ysparr_coding_base_url_normalized | length > 0
+
+    - name: Require the coding model to be available at its configured endpoint
+      ansible.builtin.assert:
+        that:
+          - ysparr_coding_models_probe.status | default(0) | int == 200
+          - (ysparr_coding_models_probe.json | default({})).data | default([]) is sequence
+          - (ysparr_coding_models_probe.json | default({})).data | default([]) is not string
+          - ysparr_coding_model_effective in ((ysparr_coding_models_probe.json | default({})).data | default([]) | map(attribute='id') | list)
+        fail_msg: The coding endpoint must be reachable and return the configured model ID from /v1/models.
+      when: ysparr_coding_base_url_normalized | length > 0
 
     - name: Check the configured upstream models endpoint
       ansible.builtin.uri:
@@ -176,6 +236,13 @@
           The upstream returned HTTP {{ status }} or an invalid/empty models response.
           Check the server health, load a model, and verify /v1/models.
           {% endif %}
+
+    - name: Require the configured chat model to be available
+      ansible.builtin.assert:
+        that:
+          - ysparr_chat_model_effective in (ysparr_upstream_models_probe.json.data | map(attribute='id') | list)
+        fail_msg: The configured chat model ID was not returned by the chat endpoint at /v1/models.
+      when: ysparr_chat_model_effective | length > 0
 
     - name: Persist protected Ysparr upstream settings
       ansible.builtin.template:

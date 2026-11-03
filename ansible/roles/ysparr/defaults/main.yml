@@ -1,10 +1,13 @@
 ---
 ysparr_state: present
 ysparr_version: 0.1.0
-ysparr_source_ref: aa2e12f7ee51f9d9d6bb0dc2b17708e7c7b94a98
+ysparr_source_ref: bf39afdbbc50944b835ad808807a8eb5d85630a5
 ysparr_host: 127.0.0.1
 ysparr_port: 8000
 ysparr_upstream_base_url: ''
+ysparr_chat_model: ''
+ysparr_coding_base_url: ''
+ysparr_coding_model: ''
 ysparr_database_path: /var/lib/ysparr/ysparr.sqlite3
 ysparr_upstream_api_key: ''
 ysparr_upstream_api_key_reset: false
