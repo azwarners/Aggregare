@@ -78,10 +78,10 @@
       "required": true
     },
     {
-      "name": "ysparr_apmatia_public_base_url",
+      "name": "ysparr_extension_base_urls",
       "type": "string",
       "required": false,
-      "description": "Apmatia service URL used to discover explicitly published prompt-only agents."
+      "description": "Comma-separated extension service URLs used to discover optional model entries and context."
     },
     {
       "name": "ysparr_upstream_api_key",
@@ -95,6 +95,6 @@
   ],
   "integrations": [
     "openai-compatible-http",
-    "apmatia-public-agent-catalog"
+    "versioned-http-extensions"
   ]
 }

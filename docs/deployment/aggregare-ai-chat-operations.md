@@ -122,7 +122,7 @@ then check the service and API paths:
 ```sh
 sudo systemctl is-active ysparr.service apmatia-core.service open-webui.service
 curl --fail --silent --show-error http://127.0.0.1:8000/v1/models
-curl --fail --silent --show-error http://127.0.0.1:8001/api/public/agents
+curl --fail --silent --show-error http://127.0.0.1:8001/api/public/ysparr/catalog
 curl --fail --silent --show-error http://127.0.0.1:8080/health
 ```
 

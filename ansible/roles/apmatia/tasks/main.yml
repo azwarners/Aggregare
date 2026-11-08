@@ -392,9 +392,9 @@
         - apmatia_managed_fresh_install | bool
       no_log: true
 
-    - name: Read Apmatia's published prompt-only agent catalog
+    - name: Read Apmatia's published Ysparr extension catalog
       ansible.builtin.uri:
-        url: "{{ apmatia_public_base_url }}/api/public/agents"
+        url: "{{ apmatia_public_base_url }}/api/public/ysparr/catalog"
         method: GET
         status_code: 200
         return_content: true
@@ -403,15 +403,15 @@
         - apmatia_session_cookie is defined
         - apmatia_upstream_available | default(false) | bool
 
-    - name: Verify the published starter agents have model mappings
+    - name: Verify the published starter extension entries have target mappings
       ansible.builtin.assert:
         that:
-          - apmatia_public_agents.json is sequence
-          - apmatia_public_agents.json is not string
-          - (apmatia_public_agents.json | map(attribute='name') | list | select('search', '^(Mira|Luna|Rowan|Belle|Ivy)') | list | length) == 5
-          - (apmatia_public_agents.json | selectattr('name', 'search', '^(Mira|Luna|Rowan|Belle|Ivy)') | selectattr('model', 'defined') | selectattr('model', 'ne', none) | list | length) == 5
-          - (apmatia_public_agents.json | selectattr('name', 'search', '^(Mira|Luna|Rowan|Belle|Ivy)') | selectattr('system_prompt', 'defined') | selectattr('system_prompt', 'ne', '') | list | length) == 5
-        fail_msg: Apmatia did not expose Mira, Luna, Rowan, Belle, and Ivy as published agents with backing model references.
+          - apmatia_public_agents.json.version == '1'
+          - apmatia_public_agents.json.entries is sequence
+          - apmatia_public_agents.json.entries is not string
+          - (apmatia_public_agents.json.entries | map(attribute='name') | list | select('search', '^(Mira|Luna|Rowan|Belle|Ivy)$') | list | length) == 5
+          - (apmatia_public_agents.json.entries | selectattr('target.preferred_model_type', 'defined') | list | length) == 5
+        fail_msg: Apmatia did not expose Mira, Luna, Rowan, Belle, and Ivy as versioned Ysparr extension entries with target mappings.
       when:
         - apmatia_session_cookie is defined
         - apmatia_upstream_available | default(false) | bool
@@ -437,11 +437,11 @@
         that:
           - apmatia_ysparr_models.json.data is sequence
           - apmatia_ysparr_models.json.data is not string
-          - (apmatia_ysparr_models.json.data | map(attribute='id') | list | select('in', (apmatia_public_agents.json | map(attribute='name') | list)) | list | length) == (apmatia_public_agents.json | length)
+          - (apmatia_ysparr_models.json.data | map(attribute='id') | list | select('in', (apmatia_public_agents.json.entries | map(attribute='name') | list)) | list | length) == (apmatia_public_agents.json.entries | length)
           - apmatia_upstream_models.json.data[0].id in (apmatia_ysparr_models.json.data | map(attribute='id') | list)
         fail_msg: >-
-          Ysparr must expose every currently published Apmatia agent alongside the
-          selected upstream model. Check its Apmatia URL and restart Ysparr if needed.
+          Ysparr must expose every currently published extension entry alongside the
+          selected upstream model. Check its extension URL and restart Ysparr if needed.
       when:
         - apmatia_session_cookie is defined
         - apmatia_upstream_available | default(false) | bool
@@ -480,6 +480,6 @@
             'version': apmatia_version,
             'deployment': {'backend': 'ansible', 'method': 'native-python', 'service': 'apmatia-core.service'},
             'verification': {'status': 'passed', 'endpoint': 'http://' ~ apmatia_host ~ ':' ~ (apmatia_port | string) ~ '/api/version'},
-            'public_agents': (apmatia_public_agents.json | length) if apmatia_public_agents is not skipped else 0,
+            'public_agents': (apmatia_public_agents.json.entries | length) if apmatia_public_agents is not skipped else 0,
             'upstream_onboarding_pending': apmatia_session_cookie is defined and not (apmatia_upstream_available | default(false) | bool)
           } | to_nice_json }}
