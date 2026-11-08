@@ -176,6 +176,7 @@
         python_app_generated_source_files:
           - src/apmatia.egg-info/PKG-INFO
           - src/apmatia.egg-info/SOURCES.txt
+          - src/apmatia.egg-info/requires.txt
 
     - name: Create Apmatia service account
       ansible.builtin.user:
