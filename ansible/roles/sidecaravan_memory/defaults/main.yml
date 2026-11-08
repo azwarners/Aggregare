@@ -24,6 +24,8 @@ memkeeper_version_marker: /usr/local/bin/memkeeper.installed-version
 memkeeper_download_dir: /var/cache/aggregare/memkeeper
 memkeeper_embed_provider: none
 memkeeper_rerank_provider: none
-memkeeper_build_lexical_only: true
+# The verified release binary is the normal deployment path. Set this to true
+# only when a model-free source build is explicitly required.
+memkeeper_build_lexical_only: false
 memkeeper_source: https://github.com/teflon07/memkeeper.git
 memkeeper_source_dir: /opt/aggregare/memkeeper-source

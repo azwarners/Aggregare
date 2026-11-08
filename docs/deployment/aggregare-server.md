@@ -116,8 +116,9 @@ curl --fail --silent --show-error http://127.0.0.1:5230/
 sudo cat /var/lib/aggregare/status/memos.json
 ```
 
-The default bundle also installs Sidecaravan's `scv` command and the pinned
-Memkeeper v0.5.3 binary. The memory store is local and does not require an LLM.
+The default bundle installs Sidecaravan's `scv` command and the pinned
+Memkeeper v0.5.3 release binary automatically; no separate Memkeeper install
+is required. The memory store is local and does not require an LLM.
 For a deployment from the public repositories, pin
 `sidecaravan_source_ref` to a reviewed Sidecaravan commit in protected
 inventory variables. For development, set `sidecaravan_source_path` to a
@@ -141,6 +142,13 @@ The store is at `/var/lib/aggregare/sidecaravan/team.sqlite`. Back it up with
 `scv backup /secure/backup/team.sqlite`, and restore only after stopping active
 writers; `scv restore` requires `--force` before replacing an existing store.
 Concurrent writers have not been certified by this milestone.
+
+Removing Sidecaravan with `sidecaravan_state: absent` removes the wrapper,
+source checkout, virtual environment, Memkeeper binary, and status record but
+preserves the store and team token. Reapplying the role therefore reuses the
+existing memories and access configuration. A destructive data purge is not
+part of the normal uninstall path; back up and remove the data explicitly if
+that is ever required.
 
 The service status should say `active`; the status record should report a
 passed verification. If you chose LAN access, use the LAN address printed by
@@ -359,8 +367,9 @@ Some applications need extra setup:
   part of this Phase 2 foundation.
 - **Apmatia** runs a loopback-only core API on port 8001. **OpenIPE** and
   **Redless** remain Python packages or command-line tools.
-- **TroubleShell** is a desktop application. **Ladcemas** and **Sidecaravan**
-  do not yet have installable roles.
+- **TroubleShell** is a desktop application, while **Ladcemas** still has no
+  installable role. **Sidecaravan** has an installable native Python/Memkeeper
+  role as described above; future agent-facing integration remains separate.
 
 The default system bundle and catalog are the source of truth for the
 applications Aggregare installs. The bootstrap delegates to the same Ansible

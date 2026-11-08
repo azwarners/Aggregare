@@ -11,7 +11,7 @@
       - sidecaravan_token_file is match('^/')
       - sidecaravan_group is match('^[a-z_][a-z0-9_-]*$')
       - memkeeper_version is match('^v[0-9]+\\.[0-9]+\\.[0-9]+$')
-      - memkeeper_target in ['x86_64-unknown-linux-gnu', 'aarch64-apple-darwin']
+      - memkeeper_target in ['x86_64-unknown-linux-gnu']
       - ansible_facts.distribution == 'Ubuntu'
       - ansible_facts.distribution_version is version('24.04', '>=')
     fail_msg: Sidecaravan memory requires Ubuntu 24.04+, a pinned Memkeeper release, and absolute protected paths.
@@ -19,7 +19,7 @@
 - name: Remove Sidecaravan memory installation
   when: sidecaravan_state == 'absent'
   block:
-    - name: Remove Sidecaravan wrapper, source, environment, and data
+    - name: Remove Sidecaravan wrapper, source, and environment
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
@@ -27,9 +27,11 @@
         - "{{ sidecaravan_wrapper }}"
         - "{{ sidecaravan_source_dir }}"
         - "{{ sidecaravan_venv }}"
-        - "{{ sidecaravan_data_dir }}"
-        - "{{ sidecaravan_token_file }}"
         - /var/lib/aggregare/status/sidecaravan-memory.json
+
+    # The store and token are administrator data, not managed runtime files.
+    # This preserves the store and token so an absent -> present cycle can
+    # reuse the existing team.
 
     - name: Remove Memkeeper binary
       ansible.builtin.file:
@@ -51,6 +53,7 @@
           - python3-pip
           - python3-venv
           - tar
+          - build-essential
           - cargo
           - rustc
         state: present
@@ -156,13 +159,27 @@
       register: memkeeper_installed_version
       changed_when: false
 
+    - name: Read the installed Memkeeper build marker
+      ansible.builtin.slurp:
+        src: "{{ memkeeper_version_marker }}"
+      register: memkeeper_installed_marker
+      when: memkeeper_installed_version.stat.exists
+      changed_when: false
+
+    - name: Determine whether the installed Memkeeper build matches the request
+      ansible.builtin.set_fact:
+        memkeeper_installed_version_matches: >-
+          {{ memkeeper_installed_version.stat.exists and
+             (memkeeper_installed_marker.content | default('') | b64decode | trim) ==
+             (memkeeper_version ~ ('-lexical' if memkeeper_build_lexical_only | bool else '')) }}
+
     - name: Extract Memkeeper release archive
       ansible.builtin.unarchive:
         src: "{{ memkeeper_download_dir }}/{{ memkeeper_asset }}"
         dest: "{{ memkeeper_download_dir }}"
         remote_src: true
         creates: "{{ memkeeper_download_dir }}/{{ memkeeper_version }}/memkeeper"
-      when: not memkeeper_installed_version.stat.exists
+      when: not memkeeper_installed_version_matches | bool
 
     - name: Locate the extracted Memkeeper binary
       ansible.builtin.find:
@@ -171,7 +188,7 @@
         file_type: file
         recurse: true
       register: memkeeper_extracted_files
-      when: not memkeeper_installed_version.stat.exists
+      when: not memkeeper_installed_version_matches | bool
 
     - name: Install the verified Memkeeper binary
       ansible.builtin.copy:
@@ -182,7 +199,7 @@
         mode: '0755'
         remote_src: true
       when:
-        - not memkeeper_installed_version.stat.exists
+        - not memkeeper_installed_version_matches | bool
         - memkeeper_extracted_files.files | length > 0
 
     - name: Record the verified Memkeeper release version
@@ -192,7 +209,7 @@
         owner: root
         group: root
         mode: '0644'
-      when: not memkeeper_installed_version.stat.exists
+      when: not memkeeper_installed_version_matches | bool
 
     - name: Verify the installed Memkeeper version
       ansible.builtin.command:
