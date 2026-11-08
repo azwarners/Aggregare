@@ -26,9 +26,15 @@
       register: apmatia_upstream_config_file
 
     - name: Read saved Ysparr upstream settings
-      ansible.builtin.include_vars:
-        file: "{{ apmatia_upstream_config_path }}"
-        name: apmatia_saved_upstream_config
+      ansible.builtin.slurp:
+        src: "{{ apmatia_upstream_config_path }}"
+      register: apmatia_saved_upstream_config_raw
+      when: apmatia_upstream_config_file.stat.exists
+      no_log: true
+
+    - name: Decode saved Ysparr upstream settings
+      ansible.builtin.set_fact:
+        apmatia_saved_upstream_config: "{{ apmatia_saved_upstream_config_raw.content | b64decode | from_json }}"
       when: apmatia_upstream_config_file.stat.exists
       no_log: true
 
@@ -249,9 +255,15 @@
       no_log: true
 
     - name: Load saved first-user credentials
-      ansible.builtin.include_vars:
-        file: "{{ apmatia_credentials_path }}"
-        name: apmatia_saved_credentials
+      ansible.builtin.slurp:
+        src: "{{ apmatia_credentials_path }}"
+      register: apmatia_saved_credentials_raw
+      when: apmatia_credentials_file.stat.exists or apmatia_generated_password is not skipped
+      no_log: true
+
+    - name: Decode saved first-user credentials
+      ansible.builtin.set_fact:
+        apmatia_saved_credentials: "{{ apmatia_saved_credentials_raw.content | b64decode | from_json }}"
       when: apmatia_credentials_file.stat.exists or apmatia_generated_password is not skipped
       no_log: true
 
