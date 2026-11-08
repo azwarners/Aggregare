@@ -63,6 +63,20 @@ class CatalogContractTests(unittest.TestCase):
                 self.assertNotIn("STATIC_API_KEY", content)
                 self.assertNotIn("pocket-id.yml", content)
 
+    def test_headless_default_does_not_install_troubleshell(self):
+        default_playbook = (ROOT / "ansible/playbooks/default.yml").read_text()
+        self.assertNotIn("troubleshell.yml", default_playbook)
+
+    def test_ysparr_can_follow_the_current_upstream_model(self):
+        ysparr_tasks = (ROOT / "ansible/roles/ysparr/tasks/main.yml").read_text()
+        self.assertIn("Select the first available chat model when the saved selection is stale", ysparr_tasks)
+        self.assertIn("ysparr_upstream_models_probe.json.data[0].id", ysparr_tasks)
+
+    def test_sidecaravan_status_uses_catalog_application_id(self):
+        sidecaravan_tasks = (ROOT / "ansible/roles/sidecaravan_memory/tasks/main.yml").read_text()
+        self.assertIn("dest: /var/lib/aggregare/status/sidecaravan.json", sidecaravan_tasks)
+        self.assertIn("'application_id': 'sidecaravan'", sidecaravan_tasks)
+
     def test_application_status_contract_accepts_catalog_verification_shape(self):
         Draft202012Validator.check_schema(self.status_schema)
         validator = Draft202012Validator(self.status_schema)

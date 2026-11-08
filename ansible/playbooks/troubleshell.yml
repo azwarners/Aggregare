@@ -5,7 +5,7 @@
     python_app_id: troubleshell
     python_app_version: '0.2'
     python_app_source: https://github.com/azwarners/TroubleShell.git
-    python_app_ref: ec89fe90fece6a87be3412a122b5dddc86de4c4a
+    python_app_ref: main
     python_app_module: troubleshell
     python_app_system_packages:
     - python3-gi
@@ -21,6 +21,6 @@
       - ansible_facts.distribution_version is version('26.04', '>=')
       fail_msg: TroubleShell is currently tested on Ubuntu 26.04 desktop systems.
   tasks:
-  - name: Install TroubleShell from its pinned upstream source
+  - name: Install TroubleShell from its main branch
     ansible.builtin.import_role:
       name: python_app

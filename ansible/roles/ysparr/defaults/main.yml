@@ -1,7 +1,7 @@
 ---
 ysparr_state: present
 ysparr_version: 0.1.0
-ysparr_source_ref: 03485f812430a169dc5536bc6cfcaaebaf00d77d
+ysparr_source_ref: main
 ysparr_host: 127.0.0.1
 ysparr_port: 8000
 ysparr_upstream_base_url: ''

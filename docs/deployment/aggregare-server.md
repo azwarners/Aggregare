@@ -120,7 +120,7 @@ The default bundle installs Sidecaravan's `scv` command and the pinned
 Memkeeper v0.5.3 release binary automatically; no separate Memkeeper install
 is required. The memory store is local and does not require an LLM.
 For a deployment from the public repositories, pin
-`sidecaravan_source_ref` to a reviewed Sidecaravan commit in protected
+`sidecaravan_source_ref` to a reviewed Sidecaravan branch or commit in protected
 inventory variables. For development, set `sidecaravan_source_path` to a
 controller-local checkout; this is useful before the Sidecaravan change has
 been pushed to its upstream repository.
@@ -155,8 +155,8 @@ passed verification. If you chose LAN access, use the LAN address printed by
 the installer instead of `127.0.0.1` in the `curl` command.
 
 The default bundle includes AI chat and productivity applications. Open
-WebUI listens on port 8080 and Ysparr on port 8000; the catalog records the
-pinned upstream versions. Open WebUI keeps its
+WebUI listens on port 8080 and Ysparr on port 8000; first-party Python
+applications are installed from their upstream `main` branches. Open WebUI keeps its
 database and uploaded data in `/var/lib/aggregare/open-webui/`; Ysparr keeps
 its SQLite database in `/var/lib/ysparr/`. Apmatia runs as
 `apmatia-core.service`, bound to loopback on port 8001, with state in
@@ -175,7 +175,7 @@ upstream models. If Apmatia is unavailable, Ysparr continues serving the real
 upstream models. Selecting an agent sends its compiled prompt as a system
 message and preserves the client's conversation; this integration does not
 provide Apmatia tools or memory through Ysparr. OpenIPE is installed from its
-pinned Python package revision as part of the default system. Open WebUI uses
+`main` branch as part of the default system. Open WebUI uses
 Ysparr, which the installer connects to an external llama.cpp endpoint during
 setup. Aggregare does not install llama.cpp or download model weights.
 
