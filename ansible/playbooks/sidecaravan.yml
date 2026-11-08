@@ -1,0 +1,6 @@
+---
+- name: Install or remove Sidecaravan shared team memory
+  hosts: aggregare
+  become: true
+  roles:
+    - sidecaravan_memory

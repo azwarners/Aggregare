@@ -1,0 +1,380 @@
+---
+- name: Validate Sidecaravan memory deployment inputs
+  ansible.builtin.assert:
+    that:
+      - sidecaravan_state in ['present', 'absent']
+      - sidecaravan_source is match('^https://')
+      - sidecaravan_source_ref | length > 0
+      - sidecaravan_source_path | length == 0 or sidecaravan_source_path is match('^/')
+      - sidecaravan_data_dir is match('^/')
+      - sidecaravan_store is match('^/')
+      - sidecaravan_token_file is match('^/')
+      - sidecaravan_group is match('^[a-z_][a-z0-9_-]*$')
+      - memkeeper_version is match('^v[0-9]+\\.[0-9]+\\.[0-9]+$')
+      - memkeeper_target in ['x86_64-unknown-linux-gnu', 'aarch64-apple-darwin']
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version is version('24.04', '>=')
+    fail_msg: Sidecaravan memory requires Ubuntu 24.04+, a pinned Memkeeper release, and absolute protected paths.
+
+- name: Remove Sidecaravan memory installation
+  when: sidecaravan_state == 'absent'
+  block:
+    - name: Remove Sidecaravan wrapper, source, environment, and data
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ sidecaravan_wrapper }}"
+        - "{{ sidecaravan_source_dir }}"
+        - "{{ sidecaravan_venv }}"
+        - "{{ sidecaravan_data_dir }}"
+        - "{{ sidecaravan_token_file }}"
+        - /var/lib/aggregare/status/sidecaravan-memory.json
+
+    - name: Remove Memkeeper binary
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ memkeeper_binary }}"
+        - "{{ memkeeper_version_marker }}"
+
+- name: Install and initialize Sidecaravan memory
+  when: sidecaravan_state == 'present'
+  block:
+    - name: Install native package prerequisites
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - git
+          - python3
+          - python3-pip
+          - python3-venv
+          - tar
+          - cargo
+          - rustc
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      when: memkeeper_build_lexical_only | bool
+
+    - name: Install native package prerequisites without a source build
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - git
+          - python3
+          - python3-pip
+          - python3-venv
+          - tar
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      when: not (memkeeper_build_lexical_only | bool)
+
+    - name: Create protected Sidecaravan directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: /opt/aggregare, mode: '0755' }
+        - { path: /opt/aggregare/venvs, mode: '0755' }
+        - { path: "{{ memkeeper_download_dir }}", mode: '0750' }
+        - { path: /var/lib/aggregare/status, mode: '0755' }
+        - { path: /etc/aggregare, mode: '0750' }
+
+    - name: Create the dedicated Sidecaravan access group
+      ansible.builtin.group:
+        name: "{{ sidecaravan_group }}"
+        state: present
+
+    - name: Add explicitly authorized users to the Sidecaravan access group
+      ansible.builtin.user:
+        name: "{{ item }}"
+        groups: "{{ sidecaravan_group }}"
+        append: true
+      loop: "{{ sidecaravan_authorized_users }}"
+
+    - name: Grant the dedicated group access to the memory data directory
+      ansible.builtin.file:
+        path: "{{ sidecaravan_data_dir }}"
+        owner: root
+        group: "{{ sidecaravan_group }}"
+        mode: '0770'
+        state: directory
+
+    - name: Create the protected Sidecaravan token directory
+      ansible.builtin.file:
+        path: "{{ sidecaravan_token_file | dirname }}"
+        state: directory
+        owner: root
+        group: "{{ sidecaravan_group }}"
+        mode: '0750'
+      when: sidecaravan_token_file | dirname != sidecaravan_data_dir
+
+    - name: Set the Memkeeper release asset name
+      ansible.builtin.set_fact:
+        memkeeper_asset: "memkeeper-{{ memkeeper_version }}-{{ memkeeper_target }}.tar.gz"
+
+    - name: Download the pinned Memkeeper release checksum
+      ansible.builtin.get_url:
+        url: "https://github.com/teflon07/memkeeper/releases/download/{{ memkeeper_version }}/{{ memkeeper_asset }}.sha256"
+        dest: "{{ memkeeper_download_dir }}/{{ memkeeper_asset }}.sha256"
+        mode: '0644'
+        force: false
+
+    - name: Read the downloaded Memkeeper checksum
+      ansible.builtin.slurp:
+        src: "{{ memkeeper_download_dir }}/{{ memkeeper_asset }}.sha256"
+      register: memkeeper_checksum_file
+      changed_when: false
+
+    - name: Extract and validate the Memkeeper checksum
+      ansible.builtin.set_fact:
+        memkeeper_sha256: "{{ (memkeeper_checksum_file.content | b64decode | regex_search('^[0-9a-fA-F]{64}')) | lower }}"
+
+    - name: Require a usable Memkeeper checksum
+      ansible.builtin.assert:
+        that:
+          - memkeeper_sha256 | length == 64
+        fail_msg: The pinned Memkeeper release did not provide a valid SHA-256 checksum.
+
+    - name: Download and verify the pinned Memkeeper release archive
+      ansible.builtin.get_url:
+        url: "https://github.com/teflon07/memkeeper/releases/download/{{ memkeeper_version }}/{{ memkeeper_asset }}"
+        dest: "{{ memkeeper_download_dir }}/{{ memkeeper_asset }}"
+        checksum: "sha256:{{ memkeeper_sha256 }}"
+        mode: '0644'
+        force: false
+
+    - name: Check whether the installed Memkeeper binary is already the requested version
+      ansible.builtin.stat:
+        path: "{{ memkeeper_version_marker }}"
+      register: memkeeper_installed_version
+      changed_when: false
+
+    - name: Extract Memkeeper release archive
+      ansible.builtin.unarchive:
+        src: "{{ memkeeper_download_dir }}/{{ memkeeper_asset }}"
+        dest: "{{ memkeeper_download_dir }}"
+        remote_src: true
+        creates: "{{ memkeeper_download_dir }}/{{ memkeeper_version }}/memkeeper"
+      when: not memkeeper_installed_version.stat.exists
+
+    - name: Locate the extracted Memkeeper binary
+      ansible.builtin.find:
+        paths: "{{ memkeeper_download_dir }}"
+        patterns: memkeeper
+        file_type: file
+        recurse: true
+      register: memkeeper_extracted_files
+      when: not memkeeper_installed_version.stat.exists
+
+    - name: Install the verified Memkeeper binary
+      ansible.builtin.copy:
+        src: "{{ (memkeeper_extracted_files.files | map(attribute='path') | list | first) }}"
+        dest: "{{ memkeeper_binary }}"
+        owner: root
+        group: root
+        mode: '0755'
+        remote_src: true
+      when:
+        - not memkeeper_installed_version.stat.exists
+        - memkeeper_extracted_files.files | length > 0
+
+    - name: Record the verified Memkeeper release version
+      ansible.builtin.copy:
+        dest: "{{ memkeeper_version_marker }}"
+        content: "{{ memkeeper_version }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+      when: not memkeeper_installed_version.stat.exists
+
+    - name: Verify the installed Memkeeper version
+      ansible.builtin.command:
+        argv: ["{{ memkeeper_binary }}", --version]
+      register: memkeeper_version_check
+      changed_when: false
+      failed_when: memkeeper_version_check.rc != 0 or 'memkeeper' not in memkeeper_version_check.stdout
+
+    - name: Check out the pinned Memkeeper source for lexical-only mode
+      ansible.builtin.git:
+        repo: "{{ memkeeper_source }}"
+        dest: "{{ memkeeper_source_dir }}"
+        version: "{{ memkeeper_version }}"
+        update: true
+      register: memkeeper_source_checkout
+      when: memkeeper_build_lexical_only | bool
+
+    - name: Check the installed Memkeeper build marker
+      ansible.builtin.slurp:
+        src: "{{ memkeeper_version_marker }}"
+      register: memkeeper_build_marker
+      failed_when: false
+      changed_when: false
+      when: memkeeper_build_lexical_only | bool
+
+    - name: Build the pinned lexical-only Memkeeper binary
+      ansible.builtin.command:
+        argv: [cargo, build, --release, --locked, --no-default-features]
+        chdir: "{{ memkeeper_source_dir }}"
+      register: memkeeper_lexical_build
+      when:
+        - memkeeper_build_lexical_only | bool
+        - memkeeper_source_checkout.changed or
+          (memkeeper_build_marker.content | default('') | b64decode | trim) != memkeeper_version ~ '-lexical'
+      changed_when: true
+
+    - name: Install the pinned lexical-only Memkeeper binary
+      ansible.builtin.copy:
+        src: "{{ memkeeper_source_dir }}/target/release/memkeeper"
+        dest: "{{ memkeeper_binary }}"
+        owner: root
+        group: root
+        mode: '0755'
+        remote_src: true
+      when:
+        - memkeeper_build_lexical_only | bool
+        - memkeeper_source_checkout.changed or memkeeper_lexical_build.changed | default(false)
+
+    - name: Record the lexical-only Memkeeper build
+      ansible.builtin.copy:
+        dest: "{{ memkeeper_version_marker }}"
+        content: "{{ memkeeper_version }}-lexical\n"
+        owner: root
+        group: root
+        mode: '0644'
+      when:
+        - memkeeper_build_lexical_only | bool
+        - memkeeper_source_checkout.changed or memkeeper_lexical_build.changed | default(false)
+
+    - name: Verify the active lexical-only Memkeeper binary
+      ansible.builtin.command:
+        argv: ["{{ memkeeper_binary }}", --version]
+      register: memkeeper_lexical_version_check
+      changed_when: false
+      failed_when: memkeeper_lexical_version_check.rc != 0 or 'memkeeper' not in memkeeper_lexical_version_check.stdout
+      when: memkeeper_build_lexical_only | bool
+
+    - name: Copy a controller-local Sidecaravan checkout
+      ansible.posix.synchronize:
+        src: "{{ sidecaravan_source_path }}/"
+        dest: "{{ sidecaravan_source_dir }}/"
+        archive: true
+        checksum: true
+        delete: false
+        times: false
+        rsync_path: "sudo -n rsync"
+        rsync_opts:
+          - "--omit-dir-times"
+          - "--exclude=.git/"
+          - "--exclude=.codebase-memory/"
+          - "--exclude=.pytest_cache/"
+          - "--exclude=__pycache__/"
+          - "--exclude=*.egg-info/"
+      register: sidecaravan_source_sync
+      when: sidecaravan_source_path | length > 0
+
+    - name: Check out the configured Sidecaravan source
+      ansible.builtin.git:
+        repo: "{{ sidecaravan_source }}"
+        dest: "{{ sidecaravan_source_dir }}"
+        version: "{{ sidecaravan_source_ref }}"
+        update: true
+      register: sidecaravan_source_checkout
+      when: sidecaravan_source_path | length == 0
+
+    - name: Record whether the Sidecaravan source changed
+      ansible.builtin.set_fact:
+        sidecaravan_source_changed: >-
+          {{ sidecaravan_source_sync.changed | default(false) or
+             sidecaravan_source_checkout.changed | default(false) }}
+
+    - name: Check whether the Sidecaravan CLI is already installed
+      ansible.builtin.stat:
+        path: "{{ sidecaravan_venv }}/bin/scv"
+      register: sidecaravan_cli_file
+
+    - name: Install Sidecaravan into its isolated virtual environment
+      ansible.builtin.pip:
+        name: "{{ sidecaravan_source_dir }}"
+        virtualenv: "{{ sidecaravan_venv }}"
+        virtualenv_command: python3 -m venv
+        editable: false
+      when: not sidecaravan_cli_file.stat.exists or sidecaravan_source_changed | bool
+
+    - name: Install the configured scv wrapper
+      ansible.builtin.template:
+        src: scv-wrapper.j2
+        dest: "{{ sidecaravan_wrapper }}"
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install the configured team token
+      ansible.builtin.copy:
+        dest: "{{ sidecaravan_token_file }}"
+        content: "{{ sidecaravan_team_token | trim }}\n"
+        owner: root
+        group: "{{ sidecaravan_group }}"
+        mode: '0640'
+      when: sidecaravan_team_token | trim | length > 0
+      no_log: true
+
+    - name: Check for the initialized Sidecaravan store and token
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ sidecaravan_store }}"
+        - "{{ sidecaravan_token_file }}"
+      register: sidecaravan_initialization_files
+
+    - name: Initialize or reuse the Memkeeper-backed team store
+      ansible.builtin.command:
+        argv: ["{{ sidecaravan_wrapper }}", init]
+      when: >-
+        not (sidecaravan_initialization_files.results[0].stat.exists | bool)
+        or not (sidecaravan_initialization_files.results[1].stat.exists | bool)
+      changed_when: true
+      no_log: true
+
+    - name: Grant authorized callers access to the generated team token
+      ansible.builtin.file:
+        path: "{{ sidecaravan_token_file }}"
+        owner: root
+        group: "{{ sidecaravan_group }}"
+        mode: '0640'
+      when: sidecaravan_team_token | trim | length == 0
+
+    - name: Grant the dedicated group access to the initialized SQLite store
+      ansible.builtin.file:
+        path: "{{ sidecaravan_store }}"
+        owner: root
+        group: "{{ sidecaravan_group }}"
+        mode: '0660'
+
+    - name: Verify the initialized Memkeeper store
+      ansible.builtin.command:
+        argv: ["{{ memkeeper_binary }}", doctor, --store, "{{ sidecaravan_store }}"]
+      register: sidecaravan_doctor
+      changed_when: false
+
+    - name: Write Sidecaravan memory deployment status
+      ansible.builtin.copy:
+        dest: /var/lib/aggregare/status/sidecaravan-memory.json
+        owner: root
+        group: root
+        mode: '0644'
+        content: >-
+          {{ {
+            'schema_version': 'v1',
+            'application_id': 'sidecaravan-memory',
+            'state': 'installed',
+            'version': sidecaravan_version,
+            'deployment': {'backend': 'ansible', 'method': 'native-python-plus-memkeeper', 'memkeeper_version': memkeeper_version},
+            'verification': {'status': 'passed', 'check': 'memkeeper doctor', 'store': sidecaravan_store}
+          } | to_nice_json }}

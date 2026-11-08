@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+export SCV_DATA_DIR={{ sidecaravan_data_dir | quote }}
+export SCV_STORE={{ sidecaravan_store | quote }}
+export SCV_TOKEN_FILE={{ sidecaravan_token_file | quote }}
+export SCV_MEMKEEPER={{ memkeeper_binary | quote }}
+export MEMKEEPER_EMBED_PROVIDER={{ memkeeper_embed_provider | quote }}
+export MEMKEEPER_RERANK_PROVIDER={{ memkeeper_rerank_provider | quote }}
+exec {{ sidecaravan_venv }}/bin/scv "$@"

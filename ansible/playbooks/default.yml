@@ -8,3 +8,4 @@
 - import_playbook: habitsync.yml
 - import_playbook: vikunja.yml
 - import_playbook: openipe.yml
+- import_playbook: sidecaravan.yml

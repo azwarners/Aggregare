@@ -17,3 +17,4 @@
 - import_playbook: grafana.yml
 - import_playbook: troubleshell.yml
 - import_playbook: report.yml
+- import_playbook: sidecaravan.yml

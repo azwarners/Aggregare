@@ -2,7 +2,7 @@
 
 ## Implemented features and boundaries
 
-**Available today:** Ubuntu Server/Ansible-oriented installation scaffolding; a default bundle with Open WebUI, Ysparr, Apmatia, Memos, HabitSync, Vikunja, and OpenIPE; published Apmatia starter-agent discovery through Ysparr; documented application and composition contracts; a selectable identity provider (`kanidm`, `external_oidc`, or `none`), with pinned Kanidm service deployment and persisted endpoint settings; identity requirement inspection via `./tools/aggregare-auth`; and tests covering configuration and contracts.
+**Available today:** Ubuntu Server/Ansible-oriented installation scaffolding; a default bundle with Open WebUI, Ysparr, Apmatia, Memos, HabitSync, Vikunja, OpenIPE, and Sidecaravan shared team memory; published Apmatia starter-agent discovery through Ysparr; documented application and composition contracts; a selectable identity provider (`kanidm`, `external_oidc`, or `none`), with pinned Kanidm service deployment and persisted endpoint settings; identity requirement inspection via `./tools/aggregare-auth`; and tests covering configuration and contracts.
 
 **Administrator supplied:** DNS records, trusted TLS certificates and private keys, and any reverse-proxy/router/firewall configuration needed to reach the selected Kanidm endpoint. Selecting `external_oidc` records the provider choice without installing an external provider. Application OIDC clients and the guided Phase 3 client remain future work.
 

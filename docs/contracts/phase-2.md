@@ -14,13 +14,13 @@ ansible-playbook -i inventory.ini playbooks/memos.yml
 ansible-playbook -i inventory.ini playbooks/welcome.yml
 ```
 
-`playbooks/site.yml` installs every catalog entry with an implemented Ansible path. It includes all three listed AI applications (llama.cpp, ComfyUI, and LocalLightChat), along with the productivity, automation, and monitoring candidates. It omits Ladcemas and Sidecaravan, whose current upstream repositories do not contain installable application code. Add the `[desktop]` workstation when running the site playbook.
+`playbooks/site.yml` installs every catalog entry with an implemented Ansible path. It includes all three listed AI applications (llama.cpp, ComfyUI, and LocalLightChat), along with the productivity, automation, monitoring candidates, and the Sidecaravan shared-memory adapter. It omits Ladcemas, whose current upstream repository does not contain installable application code. Add the `[desktop]` workstation when running the site playbook.
 
 Each supported application has its own playbook. For example, run Ysparr directly with `playbooks/ysparr.yml`; Semaphore, Grafana, and Ysparr credentials are supplied through Ansible Vault variables, never catalog fields or committed defaults. No Semaphore UI, Beszel, Grafana, or Ladcemas service is required to run Ansible.
 
 Container services bind to loopback by default. Configure a separately managed reverse proxy or firewall before exposing an endpoint to another host. Application removal stops the service and removes Aggregare's unit/configuration. Persistent data directories are preserved unless an operator removes them separately. The llama.cpp role builds the CPU server and leaves its service stopped until a model file is supplied under `/var/lib/aggregare/llama.cpp/models`; ComfyUI also uses CPU mode and does not download model weights.
 
-Applications without a long-running service are installed and checked as Python packages. Redless still needs an OpenAI-compatible model server and a repository/workspace to perform tasks; the Ansible role does not grant it host-wide execution authority.
+Applications without a long-running service are installed and checked as Python packages. Sidecaravan installs its `scv` package alongside the pinned Memkeeper binary, initializes one protected local team store, and writes a status record after `memkeeper doctor` succeeds. Redless still needs an OpenAI-compatible model server and a repository/workspace to perform tasks; the Ansible role does not grant it host-wide execution authority.
 
 ## Verification status
 

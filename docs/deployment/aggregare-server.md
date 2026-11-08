@@ -5,7 +5,8 @@ Ansible automation. Aggregare is not one dashboard that replaces the
 applications it installs.
 
 The bootstrap installs the default Aggregare operating-system bundle together:
-Open WebUI, Ysparr, Apmatia, Memos, HabitSync, Vikunja, and OpenIPE. The
+Open WebUI, Ysparr, Apmatia, Memos, HabitSync, Vikunja, OpenIPE, and
+Sidecaravan shared team memory. The
 independent application playbooks remain available for later configuration and
 reapplication. Adding an application to the default bundle does not replace or
 remove applications already installed.
@@ -114,6 +115,32 @@ sudo systemctl status memos.service --no-pager
 curl --fail --silent --show-error http://127.0.0.1:5230/
 sudo cat /var/lib/aggregare/status/memos.json
 ```
+
+The default bundle also installs Sidecaravan's `scv` command and the pinned
+Memkeeper v0.5.3 binary. The memory store is local and does not require an LLM.
+For a deployment from the public repositories, pin
+`sidecaravan_source_ref` to a reviewed Sidecaravan commit in protected
+inventory variables. For development, set `sidecaravan_source_path` to a
+controller-local checkout; this is useful before the Sidecaravan change has
+been pushed to its upstream repository.
+
+The role creates a random root-only team token on first initialization unless
+`sidecaravan_team_token` is supplied through Ansible Vault. Retrieve or
+distribute the generated token through an administrator-controlled channel,
+then use it for authorized callers:
+
+```sh
+sudo cat /var/lib/aggregare/sidecaravan/team.token
+export SCV_TOKEN='team-token'
+scv save 'A durable team decision' --source session-1 --author nick
+scv search 'team decision' --limit 5
+sudo cat /var/lib/aggregare/status/sidecaravan-memory.json
+```
+
+The store is at `/var/lib/aggregare/sidecaravan/team.sqlite`. Back it up with
+`scv backup /secure/backup/team.sqlite`, and restore only after stopping active
+writers; `scv restore` requires `--force` before replacing an existing store.
+Concurrent writers have not been certified by this milestone.
 
 The service status should say `active`; the status record should report a
 passed verification. If you chose LAN access, use the LAN address printed by

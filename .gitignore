@@ -3,3 +3,4 @@ __pycache__/
 .venv/
 ansible/inventory.ini
 ansible/group_vars/aggregare/vault.yml
+.codebase-memory/

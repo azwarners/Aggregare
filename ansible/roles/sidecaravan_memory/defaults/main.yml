@@ -1,0 +1,29 @@
+---
+sidecaravan_state: present
+sidecaravan_version: 0.1.0
+sidecaravan_source: https://github.com/azwarners/Sidecaravan.git
+sidecaravan_source_ref: main
+# Set this to a controller-local checkout for development. When empty, Ansible
+# checks out sidecaravan_source at sidecaravan_source_ref on the managed host.
+sidecaravan_source_path: ''
+sidecaravan_source_dir: /opt/aggregare/sidecaravan-source
+sidecaravan_venv: /opt/aggregare/venvs/sidecaravan
+sidecaravan_data_dir: /var/lib/aggregare/sidecaravan
+sidecaravan_store: /var/lib/aggregare/sidecaravan/team.sqlite
+sidecaravan_token_file: /var/lib/aggregare/sidecaravan/team.token
+sidecaravan_group: aggregare-memory
+sidecaravan_authorized_users: []
+sidecaravan_wrapper: /usr/local/bin/scv
+sidecaravan_team_token: ''
+
+memkeeper_version: v0.5.3
+memkeeper_target: x86_64-unknown-linux-gnu
+memkeeper_install_dir: /usr/local/bin
+memkeeper_binary: /usr/local/bin/memkeeper
+memkeeper_version_marker: /usr/local/bin/memkeeper.installed-version
+memkeeper_download_dir: /var/cache/aggregare/memkeeper
+memkeeper_embed_provider: none
+memkeeper_rerank_provider: none
+memkeeper_build_lexical_only: true
+memkeeper_source: https://github.com/teflon07/memkeeper.git
+memkeeper_source_dir: /opt/aggregare/memkeeper-source
