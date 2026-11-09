@@ -25,6 +25,7 @@
         state: absent
       loop:
         - "{{ sidecaravan_wrapper }}"
+        - /usr/local/bin/scv-mcp
         - "{{ sidecaravan_source_dir }}"
         - "{{ sidecaravan_venv }}"
         - /var/lib/aggregare/status/sidecaravan.json
@@ -343,6 +344,15 @@
         owner: root
         group: root
         mode: '0755'
+
+    - name: Expose the Sidecaravan MCP CLI through the system PATH
+      ansible.builtin.file:
+        src: "{{ sidecaravan_venv }}/bin/scv-mcp"
+        dest: /usr/local/bin/scv-mcp
+        state: link
+        owner: root
+        group: root
+        force: true
 
     - name: Install the Sidecaravan MCP systemd socket
       ansible.builtin.template:

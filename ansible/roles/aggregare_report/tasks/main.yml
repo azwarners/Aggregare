@@ -42,6 +42,22 @@
     group: root
     mode: '0755'
 
+- name: Inspect managed CLI entry points
+  ansible.builtin.stat:
+    path: "{{ item.source }}"
+  loop: "{{ aggregare_managed_cli_links }}"
+  register: aggregare_managed_cli_files
+
+- name: Expose managed CLI entry points through the system PATH
+  ansible.builtin.file:
+    src: "{{ item.item.source }}"
+    dest: "/usr/local/bin/{{ item.item.name }}"
+    state: "{{ 'link' if item.stat.exists else 'absent' }}"
+    owner: root
+    group: root
+    force: true
+  loop: "{{ aggregare_managed_cli_files.results }}"
+
 - name: Install the application catalog for report reconstruction
   ansible.builtin.copy:
     src: "{{ role_path }}/../../../catalog/v1/"

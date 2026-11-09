@@ -36,6 +36,7 @@
   ],
   "cli": [
     {"name": "scv", "path": "/usr/local/bin/scv", "description": "Sidecaravan shared team memory CLI."},
+    {"name": "scv-mcp", "path": "/usr/local/bin/scv-mcp", "description": "Sidecaravan MCP stdio server CLI."},
     {"name": "memkeeper", "path": "/usr/local/bin/memkeeper", "description": "Pinned Memkeeper storage and retrieval CLI."}
   ]
 }

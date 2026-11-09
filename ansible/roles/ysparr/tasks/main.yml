@@ -43,6 +43,7 @@
       loop:
         - /opt/aggregare/ysparr
         - /opt/aggregare/venvs/ysparr
+        - /usr/local/bin/ysparr
 
     - name: Remove Ysparr catalog status
       ansible.builtin.file:
@@ -291,6 +292,15 @@
       register: ysparr_python_install
       when: ysparr_source.changed or ysparr_python_check.rc != 0
       notify: Restart Ysparr
+
+    - name: Expose Ysparr CLI through the system PATH
+      ansible.builtin.file:
+        src: /opt/aggregare/venvs/ysparr/bin/ysparr
+        dest: /usr/local/bin/ysparr
+        state: link
+        owner: root
+        group: root
+        force: true
 
     - name: Write Ysparr environment configuration
       ansible.builtin.template:

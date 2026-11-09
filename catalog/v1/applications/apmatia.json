@@ -77,7 +77,7 @@
   "cli": [
     {
       "name": "apmatia",
-      "path": "/opt/aggregare/venvs/apmatia/bin/apmatia",
+      "path": "/usr/local/bin/apmatia",
       "description": "Apmatia API-backed administration and module CLI."
     }
   ],

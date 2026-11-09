@@ -87,7 +87,7 @@ class CatalogContractTests(unittest.TestCase):
         apmatia = load_json("catalog/v1/applications/apmatia.json")
         self.assertIn("apmatia", {cli["name"] for cli in apmatia["cli"]})
         sidecaravan = load_json("catalog/v1/applications/sidecaravan.json")
-        self.assertEqual({cli["name"] for cli in sidecaravan["cli"]}, {"scv", "memkeeper"})
+        self.assertEqual({cli["name"] for cli in sidecaravan["cli"]}, {"scv", "scv-mcp", "memkeeper"})
         memkeeper = load_json("catalog/v1/applications/memkeeper.json")
         self.assertEqual(memkeeper["display_name"], "Memkeeper")
         self.assertIn("sidecaravan-mcp.socket", {service["name"] for service in memkeeper["services"]})
@@ -100,6 +100,19 @@ class CatalogContractTests(unittest.TestCase):
         self.assertIn("ladcemas_host: \"{{ ladcemas_bind_address | default('127.0.0.1') }}\"", ladcemas_playbook)
         self.assertIn("state: \"{{ 'restarted' if ladcemas_service_template.changed else 'started' }}\"", ladcemas_tasks)
         self.assertIn("Verify Ladcemas-Lite is reachable on its configured bind address", ladcemas_tasks)
+
+    def test_catalog_clis_are_exposed_through_system_path(self):
+        for ref in self.catalog["applications"]:
+            entry = load_json(f"catalog/v1/{ref['path']}")
+            for cli in entry.get("cli", []):
+                self.assertTrue(cli["path"].startswith("/usr/local/bin/"), f"{entry['id']} CLI is not system-wide: {cli['path']}")
+        report_defaults = (ROOT / "ansible/roles/aggregare_report/defaults/main.yml").read_text()
+        report_tasks = (ROOT / "ansible/roles/aggregare_report/tasks/main.yml").read_text()
+        self.assertIn("Expose managed CLI entry points through the system PATH", report_tasks)
+        self.assertIn("scv-mcp", report_defaults)
+        for role, marker in (("apmatia", "Expose Apmatia CLI through the system PATH"), ("ysparr", "Expose Ysparr CLI through the system PATH"), ("sidecaravan_memory", "Expose the Sidecaravan MCP CLI through the system PATH"), ("llama_cpp", "Expose llama-server through the system PATH")):
+            tasks = (ROOT / "ansible/roles" / role / "tasks/main.yml").read_text()
+            self.assertIn(marker, tasks)
 
     def test_llama_endpoint_reports_model_ids_for_installer_selection(self):
         module_path = ROOT / "tools/aggregare-llama-endpoint"

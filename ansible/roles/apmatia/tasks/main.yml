@@ -101,6 +101,7 @@
       loop:
         - /opt/aggregare/apmatia
         - /opt/aggregare/venvs/apmatia
+        - /usr/local/bin/apmatia
 
     - name: Remove Apmatia catalog status
       ansible.builtin.file:
@@ -177,6 +178,15 @@
           - src/apmatia.egg-info/PKG-INFO
           - src/apmatia.egg-info/SOURCES.txt
           - src/apmatia.egg-info/requires.txt
+
+    - name: Expose Apmatia CLI through the system PATH
+      ansible.builtin.file:
+        src: /opt/aggregare/venvs/apmatia/bin/apmatia
+        dest: /usr/local/bin/apmatia
+        state: link
+        owner: root
+        group: root
+        force: true
 
     - name: Create Apmatia service account
       ansible.builtin.user:
