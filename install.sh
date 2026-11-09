@@ -329,6 +329,8 @@ PY
 
 select_llm_models() {
   local saved_chat="" saved_coding_url="" saved_coding_model="" has_saved_config=false config_file=/etc/aggregare/ysparr-upstream.json
+  local model_probe_output="" model_probe_status=0 model_choice="" model_number=""
+  local -a available_chat_models=()
   if sudo test -r "$config_file"; then
     has_saved_config=true
     readarray -t saved_targets < <(sudo python3 - "$config_file" <<'PY'
@@ -358,8 +360,31 @@ PY
   [[ -t 0 ]] || fail "configure --chat-model, --coding-llm-url, and --coding-model together."
   CHAT_MODEL="${CHAT_MODEL:-$saved_chat}"
   while [[ -z "$CHAT_MODEL" || "$CHAT_MODEL" =~ [[:space:]] ]]; do
-    read -r -p "Chat model ID${CHAT_MODEL:+ [$CHAT_MODEL]}: " candidate
-    CHAT_MODEL="${candidate:-$CHAT_MODEL}"
+    model_probe_status=0
+    model_probe_output="$("$PROJECT_ROOT/tools/aggregare-llama-endpoint" "$LLAMA_CPP_URL" 2>&1)" || model_probe_status=$?
+    if ((model_probe_status != 0)); then
+      printf '%s\n' "$model_probe_output" >&2
+      fail "could not retrieve chat models from the selected llama.cpp endpoint."
+    fi
+    mapfile -t available_chat_models < <(awk '/^Model ID: / { sub(/^Model ID: /, ""); print }' <<<"$model_probe_output")
+    ((${#available_chat_models[@]} > 0)) || fail "the selected llama.cpp endpoint returned no usable model IDs."
+    if ((${#available_chat_models[@]} == 1)); then
+      CHAT_MODEL="${available_chat_models[0]}"
+      printf 'Using the only available chat model: %s\n' "$CHAT_MODEL"
+    else
+      printf 'Available chat models:\n'
+      for model_number in "${!available_chat_models[@]}"; do
+        printf '  %d) %s\n' "$((model_number + 1))" "${available_chat_models[model_number]}"
+      done
+      while true; do
+        read -r -p "Select chat model [1-${#available_chat_models[@]}]: " model_choice
+        if [[ "$model_choice" =~ ^[0-9]+$ ]] && ((model_choice >= 1 && model_choice <= ${#available_chat_models[@]})); then
+          CHAT_MODEL="${available_chat_models[model_choice - 1]}"
+          break
+        fi
+        printf 'Choose a number from 1 to %d.\n' "${#available_chat_models[@]}"
+      done
+    fi
   done
   CODING_LLM_URL="${CODING_LLM_URL:-$saved_coding_url}"
   while [[ -z "$CODING_LLM_URL" ]]; do

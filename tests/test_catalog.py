@@ -1,8 +1,13 @@
 import json
+from importlib.machinery import SourceFileLoader
+import importlib.util
+import io
 from pathlib import Path
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stdout
+from unittest.mock import patch
 
 import yaml
 from jsonschema import Draft202012Validator
@@ -71,6 +76,32 @@ class CatalogContractTests(unittest.TestCase):
         ysparr_tasks = (ROOT / "ansible/roles/ysparr/tasks/main.yml").read_text()
         self.assertIn("Select the first available chat model when the saved selection is stale", ysparr_tasks)
         self.assertIn("ysparr_upstream_models_probe.json.data[0].id", ysparr_tasks)
+
+    def test_llama_endpoint_reports_model_ids_for_installer_selection(self):
+        module_path = ROOT / "tools/aggregare-llama-endpoint"
+        loader = SourceFileLoader("aggregare_llama_endpoint", str(module_path))
+        spec = importlib.util.spec_from_file_location("aggregare_llama_endpoint", module_path, loader=loader)
+        endpoint = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(endpoint)
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                return iter(())
+
+            def read(self):
+                return b'{"data": [{"id": "chat-one"}, {"id": "chat-two"}]}'
+
+        output = io.StringIO()
+        with patch.object(endpoint, "urlopen", return_value=Response()), redirect_stdout(output):
+            self.assertEqual(endpoint.probe("http://llama"), 0)
+        self.assertIn("Model ID: chat-one", output.getvalue())
+        self.assertIn("Model ID: chat-two", output.getvalue())
 
     def test_sidecaravan_status_uses_catalog_application_id(self):
         sidecaravan_tasks = (ROOT / "ansible/roles/sidecaravan_memory/tasks/main.yml").read_text()
