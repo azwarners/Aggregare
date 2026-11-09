@@ -79,13 +79,21 @@
         owner: root
         group: root
         mode: '0644'
+      register: ladcemas_service_template
 
     - name: Enable and start Ladcemas-Lite
       ansible.builtin.systemd_service:
         name: "{{ ladcemas_service }}"
         enabled: true
-        state: started
+        state: "{{ 'restarted' if ladcemas_service_template.changed else 'started' }}"
         daemon_reload: true
+
+    - name: Verify Ladcemas-Lite is reachable on its configured bind address
+      ansible.builtin.wait_for:
+        host: "{{ ladcemas_host }}"
+        port: "{{ ladcemas_port }}"
+        state: started
+        timeout: 15
 
     - name: Verify Ladcemas-Lite service is active
       ansible.builtin.command:

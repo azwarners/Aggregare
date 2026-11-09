@@ -95,8 +95,11 @@ class CatalogContractTests(unittest.TestCase):
         installer = (ROOT / "install.sh").read_text()
         self.assertIn('expected.insert(expected.index("sidecaravan") + 1, "memkeeper")', installer)
         ladcemas_playbook = (ROOT / "ansible/playbooks/ladcemas.yml").read_text()
+        ladcemas_tasks = (ROOT / "ansible/roles/ladcemas_lite/tasks/main.yml").read_text()
         self.assertIn('"ladcemas_bind_address": sys.argv[1]', installer)
         self.assertIn("ladcemas_host: \"{{ ladcemas_bind_address | default('127.0.0.1') }}\"", ladcemas_playbook)
+        self.assertIn("state: \"{{ 'restarted' if ladcemas_service_template.changed else 'started' }}\"", ladcemas_tasks)
+        self.assertIn("Verify Ladcemas-Lite is reachable on its configured bind address", ladcemas_tasks)
 
     def test_llama_endpoint_reports_model_ids_for_installer_selection(self):
         module_path = ROOT / "tools/aggregare-llama-endpoint"
