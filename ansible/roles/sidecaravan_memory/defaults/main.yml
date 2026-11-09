@@ -2,7 +2,10 @@
 sidecaravan_state: present
 sidecaravan_version: 0.1.0
 sidecaravan_source: https://github.com/azwarners/Sidecaravan.git
-sidecaravan_source_ref: main
+# Keep the default bundle on the current tested Sidecaravan integration branch
+# until its MCP boundary is merged. Change this back to main after promotion,
+# or override it in protected inventory for another reviewed ref.
+sidecaravan_source_ref: feat/issue-5-shared-memory-interface
 # Set this to a controller-local checkout for development. When empty, Ansible
 # checks out sidecaravan_source at sidecaravan_source_ref on the managed host.
 sidecaravan_source_path: ''

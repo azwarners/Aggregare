@@ -17,3 +17,9 @@ def test_sidecaravan_uses_verified_release_binary_by_default() -> None:
     text = defaults.read_text(encoding="utf-8")
     assert "memkeeper_build_lexical_only: false" in text
     assert "x86_64-unknown-linux-gnu" in ROLE_TASKS.read_text(encoding="utf-8")
+
+
+def test_sidecaravan_default_tracks_the_tested_integration_ref() -> None:
+    defaults = ROLE_TASKS.parents[1] / "defaults/main.yml"
+    text = defaults.read_text(encoding="utf-8")
+    assert "sidecaravan_source_ref: feat/issue-5-shared-memory-interface" in text
