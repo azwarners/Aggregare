@@ -852,6 +852,10 @@ import sys
 separator = sys.argv.index("--")
 failed = sys.argv[1:separator]
 expected = [name.removesuffix(".yml") for name in sys.argv[separator + 1:]]
+# Memkeeper is installed by Sidecaravan's playbook, but it is a separate
+# catalog application and must remain visible in the deployment inventory.
+if "sidecaravan" in expected and "memkeeper" not in expected:
+    expected.insert(expected.index("sidecaravan") + 1, "memkeeper")
 print(json.dumps({
     "aggregare_report_failed_applications": failed,
     "aggregare_report_expected_applications": expected,

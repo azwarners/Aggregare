@@ -4,7 +4,9 @@ The installer generates a current report at `/var/lib/aggregare/deployment-repor
 
 The report contains sensitive credentials. The installer sets it to mode `0600` and makes the installing administrator its owner so `aggregare report` works for that account. Keep the report and any backups protected. `aggregare summary` shows service status and endpoints without displaying login credentials.
 
-Each installed application section also lists its catalog-declared CLI commands
+The report begins with a `Configured application inventory` section that lists
+the catalog applications selected for the deployment, including standalone
+components such as Memkeeper. Each installed application section also lists its catalog-declared CLI commands
 and whether their expected paths are present. The default report includes the
 `apmatia`, `scv`, and `memkeeper` commands, plus the `aggregare` report and
 summary commands. It also lists OpenIPE, Sidecaravan's MCP socket, and

@@ -1,0 +1,39 @@
+{
+  "id": "memkeeper",
+  "display_name": "Memkeeper",
+  "description": "Pinned native memory storage and retrieval backend installed with Sidecaravan.",
+  "ownership": "third-party",
+  "category": "agent-capabilities",
+  "source": {
+    "name": "Memkeeper",
+    "upstream": "https://github.com/teflon07/memkeeper"
+  },
+  "version": "v0.5.3",
+  "status": "supported",
+  "install_methods": ["native-binary"],
+  "capabilities": {
+    "install": true,
+    "update": true,
+    "remove": true,
+    "verify": true
+  },
+  "entry_point": "ansible/playbooks/sidecaravan.yml",
+  "deployments": [
+    {
+      "method": "native-binary",
+      "backend": "ansible",
+      "entry_point": "ansible/playbooks/sidecaravan.yml",
+      "reference": "v0.5.3",
+      "requirements": ["component:sidecaravan"]
+    }
+  ],
+  "platforms": [
+    {"name": "ubuntu", "versions": ["24.04", "26.04"], "architectures": ["amd64"]}
+  ],
+  "dependencies": [],
+  "conflicts": [],
+  "cli": [
+    {"name": "memkeeper", "path": "/usr/local/bin/memkeeper", "description": "Native memory storage and retrieval CLI."}
+  ],
+  "integrations": ["sidecaravan"]
+}

@@ -86,6 +86,12 @@ class DeploymentReportTests(unittest.TestCase):
         self.assertIn("Disabled App", content)
         self.assertIn("Not detected; the application may be disabled, skipped, or not installed", content)
 
+    def test_report_has_easy_to_scan_configured_application_inventory(self):
+        content = self.render(expected_apps={"disabled"})
+        self.assertIn("## Configured application inventory", content)
+        self.assertIn("- Enabled App (`enabled`) — running", content)
+        self.assertIn("- Disabled App (`disabled`) — configured but not detected", content)
+
     def test_reapplication_content_is_stable_except_explicit_timestamp(self):
         self.assertEqual(self.render(), self.render())
 

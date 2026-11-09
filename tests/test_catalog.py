@@ -50,7 +50,7 @@ class CatalogContractTests(unittest.TestCase):
                     self.assertEqual(entry["status"], "blocked")
                     self.assertEqual(entry["install_methods"], [])
 
-        self.assertEqual(len(app_ids), 18)
+        self.assertEqual(len(app_ids), 19)
 
     def test_pocket_id_is_not_part_of_a_fresh_install(self):
         app_ids = {ref["id"] for ref in self.catalog["applications"]}
@@ -81,13 +81,18 @@ class CatalogContractTests(unittest.TestCase):
         preset = load_json("catalog/v1/presets/default.json")
         self.assertIn("ladcemas", preset["applications"])
         self.assertIn("sidecaravan", preset["applications"])
+        self.assertIn("memkeeper", preset["applications"])
         openipe = load_json("catalog/v1/applications/openipe.json")
         self.assertIn("openipe.service", {service["name"] for service in openipe["services"]})
         apmatia = load_json("catalog/v1/applications/apmatia.json")
         self.assertIn("apmatia", {cli["name"] for cli in apmatia["cli"]})
         sidecaravan = load_json("catalog/v1/applications/sidecaravan.json")
         self.assertEqual({cli["name"] for cli in sidecaravan["cli"]}, {"scv", "memkeeper"})
+        memkeeper = load_json("catalog/v1/applications/memkeeper.json")
+        self.assertEqual(memkeeper["display_name"], "Memkeeper")
+        self.assertEqual({cli["name"] for cli in memkeeper["cli"]}, {"memkeeper"})
         installer = (ROOT / "install.sh").read_text()
+        self.assertIn('expected.insert(expected.index("sidecaravan") + 1, "memkeeper")', installer)
         ladcemas_playbook = (ROOT / "ansible/playbooks/ladcemas.yml").read_text()
         self.assertIn('"ladcemas_bind_address": sys.argv[1]', installer)
         self.assertIn("ladcemas_host: \"{{ ladcemas_bind_address | default('127.0.0.1') }}\"", ladcemas_playbook)
@@ -127,6 +132,7 @@ class CatalogContractTests(unittest.TestCase):
     def test_sidecaravan_status_uses_catalog_application_id(self):
         sidecaravan_tasks = (ROOT / "ansible/roles/sidecaravan_memory/tasks/main.yml").read_text()
         self.assertIn("dest: /var/lib/aggregare/status/sidecaravan.json", sidecaravan_tasks)
+        self.assertIn("dest: /var/lib/aggregare/status/memkeeper.json", sidecaravan_tasks)
         self.assertIn("'application_id': 'sidecaravan'", sidecaravan_tasks)
 
     def test_application_status_contract_accepts_catalog_verification_shape(self):

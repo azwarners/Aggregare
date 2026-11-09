@@ -28,6 +28,7 @@
         - "{{ sidecaravan_source_dir }}"
         - "{{ sidecaravan_venv }}"
         - /var/lib/aggregare/status/sidecaravan.json
+        - /var/lib/aggregare/status/memkeeper.json
         - /var/lib/aggregare/status/sidecaravan-memory.json
         - "/etc/systemd/system/{{ sidecaravan_mcp_socket_unit }}"
         - "/etc/systemd/system/{{ sidecaravan_mcp_service_unit }}"
@@ -427,5 +428,21 @@
             'state': 'installed',
             'version': sidecaravan_version,
             'deployment': {'backend': 'ansible', 'method': 'native-python-plus-memkeeper', 'memkeeper_version': memkeeper_version},
+            'verification': {'status': 'passed', 'check': 'memkeeper doctor', 'store': sidecaravan_store}
+          } | to_nice_json }}
+
+    - name: Write Memkeeper deployment status
+      ansible.builtin.copy:
+        dest: /var/lib/aggregare/status/memkeeper.json
+        owner: root
+        group: root
+        mode: '0644'
+        content: >-
+          {{ {
+            'schema_version': 'v1',
+            'application_id': 'memkeeper',
+            'state': 'installed',
+            'version': memkeeper_version,
+            'deployment': {'backend': 'ansible', 'method': 'native-binary'},
             'verification': {'status': 'passed', 'check': 'memkeeper doctor', 'store': sidecaravan_store}
           } | to_nice_json }}
