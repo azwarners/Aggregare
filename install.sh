@@ -594,6 +594,7 @@ import sys
 
 print(json.dumps({
     "application_bind_address": sys.argv[1],
+    "ladcemas_bind_address": sys.argv[1],
     "habitsync_bind_address": sys.argv[1],
     "memos_base_url": f"http://{sys.argv[1]}:5230",
     "habitsync_base_url": f"http://{sys.argv[1]}:6842",

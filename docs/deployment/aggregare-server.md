@@ -161,8 +161,9 @@ the installer instead of `127.0.0.1` in the `curl` command.
 Sidecaravan exposes its local MCP boundary through the administrator-protected
 `sidecaravan-mcp.socket` Unix socket and provides the `scv` and `memkeeper`
 commands. OpenIPE runs its REST API as `openipe.service` on loopback port 8002.
-Ladcemas-Lite runs as `ladcemas-lite.service` on loopback port 5000 and reads
-the generated deployment report.
+Ladcemas-Lite runs as `ladcemas-lite.service` on the same loopback or private
+LAN bind address selected for the other user-facing applications, on port 5000,
+and reads the generated deployment report.
 
 The default bundle includes AI chat and productivity applications. Open
 WebUI listens on port 8080 and Ysparr on port 8000; first-party Python

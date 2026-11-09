@@ -7,7 +7,7 @@
       - ladcemas_source_ref | length > 0
       - ladcemas_source_dir is match('^/')
       - ladcemas_venv is match('^/')
-      - ladcemas_host in ['127.0.0.1', '0.0.0.0']
+      - ladcemas_host is match('^[0-9A-Fa-f:.]+$')
       - ladcemas_port | int > 0 and ladcemas_port | int < 65536
       - ansible_facts.distribution == 'Ubuntu'
       - ansible_facts.distribution_version is version('24.04', '>=')

@@ -4,5 +4,6 @@
   become: true
   vars:
     application_version: 0.1.0
+    ladcemas_host: "{{ ladcemas_bind_address | default('127.0.0.1') }}"
   roles:
     - ladcemas_lite

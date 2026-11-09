@@ -87,6 +87,10 @@ class CatalogContractTests(unittest.TestCase):
         self.assertIn("apmatia", {cli["name"] for cli in apmatia["cli"]})
         sidecaravan = load_json("catalog/v1/applications/sidecaravan.json")
         self.assertEqual({cli["name"] for cli in sidecaravan["cli"]}, {"scv", "memkeeper"})
+        installer = (ROOT / "install.sh").read_text()
+        ladcemas_playbook = (ROOT / "ansible/playbooks/ladcemas.yml").read_text()
+        self.assertIn('"ladcemas_bind_address": sys.argv[1]', installer)
+        self.assertIn("ladcemas_host: \"{{ ladcemas_bind_address | default('127.0.0.1') }}\"", ladcemas_playbook)
 
     def test_llama_endpoint_reports_model_ids_for_installer_selection(self):
         module_path = ROOT / "tools/aggregare-llama-endpoint"
