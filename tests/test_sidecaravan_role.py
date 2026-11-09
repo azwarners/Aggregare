@@ -23,3 +23,12 @@ def test_sidecaravan_default_tracks_the_tested_integration_ref() -> None:
     defaults = ROLE_TASKS.parents[1] / "defaults/main.yml"
     text = defaults.read_text(encoding="utf-8")
     assert "sidecaravan_source_ref: feat/issue-5-shared-memory-interface" in text
+
+
+def test_default_bundle_tracks_coordinated_apmatia_ysparr_ref() -> None:
+    root = ROLE_TASKS.parents[2]
+    ysparr_defaults = (root / "ysparr/defaults/main.yml").read_text(encoding="utf-8")
+    apmatia_defaults = (root / "apmatia/defaults/main.yml").read_text(encoding="utf-8")
+    expected = "feat/apmatia-13-authenticated-ysparr-agents"
+    assert f"ysparr_source_ref: {expected}" in ysparr_defaults
+    assert f"apmatia_source_ref: {expected}" in apmatia_defaults

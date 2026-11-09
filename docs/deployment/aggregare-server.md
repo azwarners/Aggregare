@@ -119,11 +119,12 @@ sudo cat /var/lib/aggregare/status/memos.json
 The default bundle installs Sidecaravan's `scv` command and the pinned
 Memkeeper v0.5.3 release binary automatically; no separate Memkeeper install
 is required. The memory store is local and does not require an LLM.
-The checked-in development bundle pins `sidecaravan_source_ref` to the current
-tested Sidecaravan integration branch, so a fresh Aggregare install pulls the
-matching MCP-capable package automatically. After that branch is promoted,
-change the pin back to `main` in the role defaults. For any other reviewed
-branch or commit, override `sidecaravan_source_ref` in protected inventory.
+The checked-in development bundle pins Sidecaravan, Ysparr, and Apmatia to the
+coordinated test branches, so a fresh Aggregare install pulls matching
+application versions automatically. After those branches are promoted, change
+the pins back to `main` in the role defaults. For any other reviewed branch
+or commit, override the corresponding source-ref variables in protected
+inventory.
 For changes that have not been pushed upstream, set
 `sidecaravan_source_path` to a controller-local checkout; this is useful for
 development and preserves the same automated installation path.

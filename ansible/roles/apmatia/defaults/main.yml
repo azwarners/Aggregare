@@ -2,7 +2,9 @@
 apmatia_state: present
 apmatia_version: 0.0.1.7
 apmatia_source: https://github.com/azwarners/Apmatia.git
-apmatia_source_ref: main
+# Keep the default development bundle aligned with Ysparr's coordinated
+# authentication work. Promote this back to main after both branches land.
+apmatia_source_ref: feat/apmatia-13-authenticated-ysparr-agents
 apmatia_host: 127.0.0.1
 apmatia_port: 8001
 apmatia_home: /var/lib/apmatia/app
