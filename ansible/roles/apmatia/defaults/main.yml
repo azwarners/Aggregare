@@ -2,7 +2,7 @@
 apmatia_state: present
 apmatia_version: 0.0.1.7
 apmatia_source: https://github.com/azwarners/Apmatia.git
-apmatia_source_ref: 603df7eab2c7c5a8805a92f91ed246a71bbbc5c5
+apmatia_source_ref: main
 apmatia_host: 127.0.0.1
 apmatia_port: 8001
 apmatia_home: /var/lib/apmatia/app

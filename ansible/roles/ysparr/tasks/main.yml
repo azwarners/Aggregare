@@ -237,12 +237,19 @@
           Check the server health, load a model, and verify /v1/models.
           {% endif %}
 
-    - name: Require the configured chat model to be available
+    - name: Select the first available chat model when the saved selection is stale
+      ansible.builtin.set_fact:
+        ysparr_chat_model_effective: >-
+          {{ ysparr_upstream_models_probe.json.data[0].id
+             if ysparr_chat_model_effective not in (ysparr_upstream_models_probe.json.data | map(attribute='id') | list)
+             else ysparr_chat_model_effective }}
+      no_log: true
+
+    - name: Require the selected chat model to be available
       ansible.builtin.assert:
         that:
           - ysparr_chat_model_effective in (ysparr_upstream_models_probe.json.data | map(attribute='id') | list)
-        fail_msg: The configured chat model ID was not returned by the chat endpoint at /v1/models.
-      when: ysparr_chat_model_effective | length > 0
+        fail_msg: The upstream did not return a usable chat model from /v1/models.
 
     - name: Persist protected Ysparr upstream settings
       ansible.builtin.template:
@@ -253,7 +260,7 @@
         mode: '0640'
       no_log: true
 
-    - name: Check out the pinned Ysparr source
+    - name: Check out the Ysparr main branch
       ansible.builtin.git:
         repo: https://github.com/azwarners/Ysparr.git
         dest: /opt/aggregare/ysparr

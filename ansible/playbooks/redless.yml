@@ -3,11 +3,11 @@
   become: true
   vars:
     python_app_id: redless
-    python_app_version: source-16bb8dd
+    python_app_version: main
     python_app_source: https://github.com/azwarners/Redless.git
-    python_app_ref: 16bb8dd2d68582a55394075dfb7fbf5bb2924385
+    python_app_ref: main
     python_app_module: minisweagent
   tasks:
-  - name: Install Redless from its pinned upstream source
+  - name: Install Redless from its main branch
     ansible.builtin.import_role:
       name: python_app

@@ -727,6 +727,7 @@ APPLICATION_FAILURES=()
       ysparr) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "ysparr_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/ysparr/defaults/main.yml")" ;;
       apmatia) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "apmatia_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/apmatia/defaults/main.yml")" ;;
       openipe) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "python_app_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "playbooks/$APPLICATION_PLAYBOOK")" ;;
+      sidecaravan) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "sidecaravan_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/sidecaravan_memory/defaults/main.yml")" ;;
       *) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "application_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "playbooks/$APPLICATION_PLAYBOOK")" ;;
     esac
     [[ -n "$APPLICATION_EXPECTED_VERSION" ]] || fail "could not determine the expected version for $APPLICATION_ID."

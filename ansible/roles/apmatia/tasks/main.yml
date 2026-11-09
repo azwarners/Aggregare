@@ -163,7 +163,7 @@
         name: openssl
         state: present
 
-    - name: Install the pinned Apmatia Python application
+    - name: Install Apmatia from its main branch
       ansible.builtin.import_role:
         name: python_app
       vars:
@@ -422,7 +422,7 @@
           - apmatia_public_agents.json.version == '1'
           - apmatia_public_agents.json.entries is sequence
           - apmatia_public_agents.json.entries is not string
-          - (apmatia_public_agents.json.entries | map(attribute='name') | list | select('search', '^(Mira|Luna|Rowan|Belle|Ivy)$') | list | length) == 5
+          - (apmatia_public_agents.json.entries | map(attribute='name') | list | select('search', '^(Mira|Luna|Rowan|Belle|Ivy)(\\s|$)') | list | length) == 5
           - (apmatia_public_agents.json.entries | selectattr('target.preferred_model_type', 'defined') | list | length) == 5
         fail_msg: Apmatia did not expose Mira, Luna, Rowan, Belle, and Ivy as versioned Ysparr extension entries with target mappings.
       when:
