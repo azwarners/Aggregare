@@ -48,15 +48,23 @@
   loop: "{{ aggregare_managed_cli_links }}"
   register: aggregare_managed_cli_files
 
-- name: Expose managed CLI entry points through the system PATH
+- name: Expose installed managed CLI entry points through the system PATH
   ansible.builtin.file:
     src: "{{ item.item.source }}"
     dest: "/usr/local/bin/{{ item.item.name }}"
-    state: "{{ 'link' if item.stat.exists else 'absent' }}"
+    state: link
     owner: root
     group: root
     force: true
   loop: "{{ aggregare_managed_cli_files.results }}"
+  when: item.stat.exists
+
+- name: Remove unavailable optional CLI entry points from the system PATH
+  ansible.builtin.file:
+    dest: "/usr/local/bin/{{ item.item.name }}"
+    state: absent
+  loop: "{{ aggregare_managed_cli_files.results }}"
+  when: not item.stat.exists
 
 - name: Install the application catalog for report reconstruction
   ansible.builtin.copy:

@@ -108,7 +108,8 @@ class CatalogContractTests(unittest.TestCase):
                 self.assertTrue(cli["path"].startswith("/usr/local/bin/"), f"{entry['id']} CLI is not system-wide: {cli['path']}")
         report_defaults = (ROOT / "ansible/roles/aggregare_report/defaults/main.yml").read_text()
         report_tasks = (ROOT / "ansible/roles/aggregare_report/tasks/main.yml").read_text()
-        self.assertIn("Expose managed CLI entry points through the system PATH", report_tasks)
+        self.assertIn("Expose installed managed CLI entry points through the system PATH", report_tasks)
+        self.assertIn("Remove unavailable optional CLI entry points from the system PATH", report_tasks)
         self.assertIn("scv-mcp", report_defaults)
         for role, marker in (("apmatia", "Expose Apmatia CLI through the system PATH"), ("ysparr", "Expose Ysparr CLI through the system PATH"), ("sidecaravan_memory", "Expose the Sidecaravan MCP CLI through the system PATH"), ("llama_cpp", "Expose llama-server through the system PATH")):
             tasks = (ROOT / "ansible/roles" / role / "tasks/main.yml").read_text()

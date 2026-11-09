@@ -135,12 +135,24 @@
       ansible.builtin.set_fact:
         memkeeper_asset: "memkeeper-{{ memkeeper_version }}-{{ memkeeper_target }}.tar.gz"
 
+    - name: Check for a cached Memkeeper release checksum
+      ansible.builtin.stat:
+        path: "{{ memkeeper_download_dir }}/{{ memkeeper_asset }}.sha256"
+      register: memkeeper_checksum_cached
+      changed_when: false
+
     - name: Download the pinned Memkeeper release checksum
       ansible.builtin.get_url:
         url: "https://github.com/teflon07/memkeeper/releases/download/{{ memkeeper_version }}/{{ memkeeper_asset }}.sha256"
         dest: "{{ memkeeper_download_dir }}/{{ memkeeper_asset }}.sha256"
         mode: '0644'
         force: false
+        timeout: 30
+      register: memkeeper_checksum_download
+      retries: 3
+      delay: 5
+      until: memkeeper_checksum_download is succeeded
+      when: not memkeeper_checksum_cached.stat.exists
 
     - name: Read the downloaded Memkeeper checksum
       ansible.builtin.slurp:
@@ -165,6 +177,11 @@
         checksum: "sha256:{{ memkeeper_sha256 }}"
         mode: '0644'
         force: false
+        timeout: 30
+      register: memkeeper_archive_download
+      retries: 3
+      delay: 5
+      until: memkeeper_archive_download is succeeded
 
     - name: Check whether the installed Memkeeper binary is already the requested version
       ansible.builtin.stat:
