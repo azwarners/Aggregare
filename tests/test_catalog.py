@@ -103,6 +103,12 @@ class CatalogContractTests(unittest.TestCase):
         self.assertIn("Model ID: chat-one", output.getvalue())
         self.assertIn("Model ID: chat-two", output.getvalue())
 
+    def test_installer_uses_endpoint_model_selection_for_chat_and_coding(self):
+        installer = (ROOT / "install.sh").read_text()
+        self.assertIn('select_model_from_endpoint "$LLAMA_CPP_URL" chat', installer)
+        self.assertIn('select_model_from_endpoint "$CODING_LLM_URL" coding', installer)
+        self.assertNotIn('read -r -p "Coding model ID', installer)
+
     def test_sidecaravan_status_uses_catalog_application_id(self):
         sidecaravan_tasks = (ROOT / "ansible/roles/sidecaravan_memory/tasks/main.yml").read_text()
         self.assertIn("dest: /var/lib/aggregare/status/sidecaravan.json", sidecaravan_tasks)

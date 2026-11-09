@@ -262,7 +262,8 @@ The installer prompts for the chat endpoint and checks `GET /v1/models`
 from the Aggregare host before installing the bundle. If that endpoint returns
 one model, the installer selects it automatically for chat. If it returns
 multiple models, the installer displays them as a numbered list for selection.
-It also collects the coding endpoint URL and coding model ID. The chat endpoint
+The same automatic selection or numbered list is used for the coding endpoint.
+The installer also collects the coding endpoint URL. The chat endpoint
 continues to serve Open WebUI chats and Apmatia agents. Ysparr lists the
 configured coding model as a separate selectable model; requests using that
 ID go to the coding endpoint. Enter endpoint addresses as `HOST:PORT` (for

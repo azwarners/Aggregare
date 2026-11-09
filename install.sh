@@ -327,10 +327,40 @@ PY
   install_state_set llama_cpp_url "$LLAMA_CPP_URL" || fail "could not save installer progress to $INSTALL_STATE_FILE."
 }
 
+select_model_from_endpoint() {
+  local endpoint_url="$1" model_kind="$2" model_probe_output="" model_probe_status=0 model_choice="" model_number=""
+  local -a available_models=()
+
+  model_probe_status=0
+  model_probe_output="$("$PROJECT_ROOT/tools/aggregare-llama-endpoint" "$endpoint_url" 2>&1)" || model_probe_status=$?
+  if ((model_probe_status != 0)); then
+    printf '%s\n' "$model_probe_output" >&2
+    fail "could not retrieve ${model_kind} models from the selected OpenAI-compatible endpoint."
+  fi
+  mapfile -t available_models < <(awk '/^Model ID: / { sub(/^Model ID: /, ""); print }' <<<"$model_probe_output")
+  ((${#available_models[@]} > 0)) || fail "the selected ${model_kind} endpoint returned no usable model IDs."
+  if ((${#available_models[@]} == 1)); then
+    SELECTED_MODEL="${available_models[0]}"
+    printf 'Using the only available %s model: %s\n' "$model_kind" "$SELECTED_MODEL"
+    return
+  fi
+
+  printf 'Available %s models:\n' "$model_kind"
+  for model_number in "${!available_models[@]}"; do
+    printf '  %d) %s\n' "$((model_number + 1))" "${available_models[model_number]}"
+  done
+  while true; do
+    read -r -p "Select ${model_kind} model [1-${#available_models[@]}]: " model_choice
+    if [[ "$model_choice" =~ ^[0-9]+$ ]] && ((model_choice >= 1 && model_choice <= ${#available_models[@]})); then
+      SELECTED_MODEL="${available_models[model_choice - 1]}"
+      return
+    fi
+    printf 'Choose a number from 1 to %d.\n' "${#available_models[@]}"
+  done
+}
+
 select_llm_models() {
   local saved_chat="" saved_coding_url="" saved_coding_model="" has_saved_config=false config_file=/etc/aggregare/ysparr-upstream.json
-  local model_probe_output="" model_probe_status=0 model_choice="" model_number=""
-  local -a available_chat_models=()
   if sudo test -r "$config_file"; then
     has_saved_config=true
     readarray -t saved_targets < <(sudo python3 - "$config_file" <<'PY'
@@ -360,31 +390,8 @@ PY
   [[ -t 0 ]] || fail "configure --chat-model, --coding-llm-url, and --coding-model together."
   CHAT_MODEL="${CHAT_MODEL:-$saved_chat}"
   while [[ -z "$CHAT_MODEL" || "$CHAT_MODEL" =~ [[:space:]] ]]; do
-    model_probe_status=0
-    model_probe_output="$("$PROJECT_ROOT/tools/aggregare-llama-endpoint" "$LLAMA_CPP_URL" 2>&1)" || model_probe_status=$?
-    if ((model_probe_status != 0)); then
-      printf '%s\n' "$model_probe_output" >&2
-      fail "could not retrieve chat models from the selected llama.cpp endpoint."
-    fi
-    mapfile -t available_chat_models < <(awk '/^Model ID: / { sub(/^Model ID: /, ""); print }' <<<"$model_probe_output")
-    ((${#available_chat_models[@]} > 0)) || fail "the selected llama.cpp endpoint returned no usable model IDs."
-    if ((${#available_chat_models[@]} == 1)); then
-      CHAT_MODEL="${available_chat_models[0]}"
-      printf 'Using the only available chat model: %s\n' "$CHAT_MODEL"
-    else
-      printf 'Available chat models:\n'
-      for model_number in "${!available_chat_models[@]}"; do
-        printf '  %d) %s\n' "$((model_number + 1))" "${available_chat_models[model_number]}"
-      done
-      while true; do
-        read -r -p "Select chat model [1-${#available_chat_models[@]}]: " model_choice
-        if [[ "$model_choice" =~ ^[0-9]+$ ]] && ((model_choice >= 1 && model_choice <= ${#available_chat_models[@]})); then
-          CHAT_MODEL="${available_chat_models[model_choice - 1]}"
-          break
-        fi
-        printf 'Choose a number from 1 to %d.\n' "${#available_chat_models[@]}"
-      done
-    fi
+    select_model_from_endpoint "$LLAMA_CPP_URL" chat
+    CHAT_MODEL="$SELECTED_MODEL"
   done
   CODING_LLM_URL="${CODING_LLM_URL:-$saved_coding_url}"
   while [[ -z "$CODING_LLM_URL" ]]; do
@@ -392,8 +399,8 @@ PY
   done
   CODING_MODEL="${CODING_MODEL:-$saved_coding_model}"
   while [[ -z "$CODING_MODEL" || "$CODING_MODEL" =~ [[:space:]] ]]; do
-    read -r -p "Coding model ID${CODING_MODEL:+ [$CODING_MODEL]}: " candidate
-    CODING_MODEL="${candidate:-$CODING_MODEL}"
+    select_model_from_endpoint "$CODING_LLM_URL" coding
+    CODING_MODEL="$SELECTED_MODEL"
   done
 }
 
