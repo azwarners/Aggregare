@@ -90,6 +90,7 @@ class CatalogContractTests(unittest.TestCase):
         self.assertEqual({cli["name"] for cli in sidecaravan["cli"]}, {"scv", "memkeeper"})
         memkeeper = load_json("catalog/v1/applications/memkeeper.json")
         self.assertEqual(memkeeper["display_name"], "Memkeeper")
+        self.assertIn("sidecaravan-mcp.socket", {service["name"] for service in memkeeper["services"]})
         self.assertEqual({cli["name"] for cli in memkeeper["cli"]}, {"memkeeper"})
         installer = (ROOT / "install.sh").read_text()
         self.assertIn('expected.insert(expected.index("sidecaravan") + 1, "memkeeper")', installer)

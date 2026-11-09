@@ -32,6 +32,9 @@
   ],
   "dependencies": [],
   "conflicts": [],
+  "services": [
+    {"name": "sidecaravan-mcp.socket", "data_paths": ["/var/lib/aggregare/sidecaravan"]}
+  ],
   "cli": [
     {"name": "memkeeper", "path": "/usr/local/bin/memkeeper", "description": "Native memory storage and retrieval CLI."}
   ],
