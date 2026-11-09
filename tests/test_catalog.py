@@ -77,6 +77,17 @@ class CatalogContractTests(unittest.TestCase):
         self.assertIn("Select the first available chat model when the saved selection is stale", ysparr_tasks)
         self.assertIn("ysparr_upstream_models_probe.json.data[0].id", ysparr_tasks)
 
+    def test_default_bundle_and_report_metadata_cover_first_party_components(self):
+        preset = load_json("catalog/v1/presets/default.json")
+        self.assertIn("ladcemas", preset["applications"])
+        self.assertIn("sidecaravan", preset["applications"])
+        openipe = load_json("catalog/v1/applications/openipe.json")
+        self.assertIn("openipe.service", {service["name"] for service in openipe["services"]})
+        apmatia = load_json("catalog/v1/applications/apmatia.json")
+        self.assertIn("apmatia", {cli["name"] for cli in apmatia["cli"]})
+        sidecaravan = load_json("catalog/v1/applications/sidecaravan.json")
+        self.assertEqual({cli["name"] for cli in sidecaravan["cli"]}, {"scv", "memkeeper"})
+
     def test_llama_endpoint_reports_model_ids_for_installer_selection(self):
         module_path = ROOT / "tools/aggregare-llama-endpoint"
         loader = SourceFileLoader("aggregare_llama_endpoint", str(module_path))

@@ -1,0 +1,8 @@
+---
+- name: Install or remove Ladcemas-Lite
+  hosts: aggregare
+  become: true
+  vars:
+    application_version: 0.1.0
+  roles:
+    - ladcemas_lite

@@ -1,23 +1,41 @@
 {
   "id": "sidecaravan",
   "display_name": "Sidecaravan",
-  "description": "Sidecaravan curated application entry.",
+  "description": "Sidecaravan shared team memory with its scv CLI, MCP socket service, and pinned Memkeeper backend.",
   "ownership": "aggregare",
   "category": "agent-capabilities",
   "source": {
     "name": "Aggregare / Sidecaravan",
     "upstream": "https://github.com/azwarners/Sidecaravan"
   },
-  "version": "unreleased",
-  "status": "blocked",
-  "install_methods": [],
+  "version": "0.1.0",
+  "status": "supported",
+  "install_methods": ["native-python-plus-memkeeper"],
   "capabilities": {
-    "install": false,
-    "update": false,
-    "remove": false,
-    "verify": false
+    "install": true,
+    "update": true,
+    "remove": true,
+    "verify": true
   },
-  "unsupported_operations": [
-    "no-installable-source-or-package"
+  "entry_point": "ansible/playbooks/sidecaravan.yml",
+  "deployments": [
+    {
+      "method": "native-python-plus-memkeeper",
+      "backend": "ansible",
+      "entry_point": "ansible/playbooks/sidecaravan.yml",
+      "reference": "feat/issue-5-shared-memory-interface",
+      "requirements": ["system:git", "system:python3", "system:python3-venv", "component:memkeeper"]
+    }
+  ],
+  "platforms": [
+    {"name": "ubuntu", "versions": ["24.04", "26.04"], "architectures": ["amd64"]}
+  ],
+  "dependencies": ["system:git", "system:python3", "system:python3-venv", "component:memkeeper"],
+  "services": [
+    {"name": "sidecaravan-mcp.socket", "data_paths": ["/var/lib/aggregare/sidecaravan"]}
+  ],
+  "cli": [
+    {"name": "scv", "path": "/usr/local/bin/scv", "description": "Sidecaravan shared team memory CLI."},
+    {"name": "memkeeper", "path": "/usr/local/bin/memkeeper", "description": "Pinned Memkeeper storage and retrieval CLI."}
   ]
 }

@@ -17,6 +17,9 @@ sidecaravan_token_file: /var/lib/aggregare/sidecaravan/team.token
 sidecaravan_group: aggregare-memory
 sidecaravan_authorized_users: []
 sidecaravan_wrapper: /usr/local/bin/scv
+sidecaravan_mcp_socket: /run/aggregare/sidecaravan-mcp.sock
+sidecaravan_mcp_socket_unit: sidecaravan-mcp.socket
+sidecaravan_mcp_service_unit: sidecaravan-mcp@.service
 sidecaravan_team_token: ''
 
 memkeeper_version: v0.5.3

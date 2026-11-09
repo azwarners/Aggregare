@@ -1,0 +1,109 @@
+---
+- name: Validate Ladcemas-Lite deployment inputs
+  ansible.builtin.assert:
+    that:
+      - ladcemas_state in ['present', 'absent']
+      - ladcemas_source is match('^https://')
+      - ladcemas_source_ref | length > 0
+      - ladcemas_source_dir is match('^/')
+      - ladcemas_venv is match('^/')
+      - ladcemas_host in ['127.0.0.1', '0.0.0.0']
+      - ladcemas_port | int > 0 and ladcemas_port | int < 65536
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version is version('24.04', '>=')
+
+- name: Remove Ladcemas-Lite
+  when: ladcemas_state == 'absent'
+  block:
+    - name: Stop and disable Ladcemas-Lite
+      ansible.builtin.systemd_service:
+        name: "{{ ladcemas_service }}"
+        enabled: false
+        state: stopped
+        daemon_reload: true
+      failed_when: false
+
+    - name: Remove Ladcemas-Lite service and installation
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/etc/systemd/system/{{ ladcemas_service }}"
+        - "{{ ladcemas_source_dir }}"
+        - "{{ ladcemas_venv }}"
+        - /var/lib/aggregare/status/ladcemas.json
+
+- name: Install and start Ladcemas-Lite
+  when: ladcemas_state == 'present'
+  block:
+    - name: Install Ladcemas-Lite prerequisites
+      ansible.builtin.apt:
+        name: [git, python3, python3-venv, python3-pip]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create Ladcemas-Lite parent directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - /opt/aggregare
+        - /opt/aggregare/venvs
+        - /var/lib/aggregare/status
+
+    - name: Check out Ladcemas-Lite source
+      ansible.builtin.git:
+        repo: "{{ ladcemas_source }}"
+        dest: "{{ ladcemas_source_dir }}"
+        version: "{{ ladcemas_source_ref }}"
+        update: true
+
+    - name: Create Ladcemas-Lite virtual environment
+      ansible.builtin.command:
+        argv: [python3, -m, venv, "{{ ladcemas_venv }}"]
+        creates: "{{ ladcemas_venv }}/bin/python"
+
+    - name: Install Ladcemas-Lite Python requirements
+      ansible.builtin.pip:
+        requirements: "{{ ladcemas_source_dir }}/requirements.txt"
+        virtualenv: "{{ ladcemas_venv }}"
+
+    - name: Install Ladcemas-Lite systemd service
+      ansible.builtin.template:
+        src: ladcemas-lite.service.j2
+        dest: "/etc/systemd/system/{{ ladcemas_service }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Enable and start Ladcemas-Lite
+      ansible.builtin.systemd_service:
+        name: "{{ ladcemas_service }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Verify Ladcemas-Lite service is active
+      ansible.builtin.command:
+        argv: [systemctl, is-active, "{{ ladcemas_service }}"]
+      changed_when: false
+
+    - name: Write Ladcemas-Lite deployment status
+      ansible.builtin.copy:
+        dest: /var/lib/aggregare/status/ladcemas.json
+        owner: root
+        group: root
+        mode: '0644'
+        content: >-
+          {{ {
+            'schema_version': 'v1',
+            'application_id': 'ladcemas',
+            'state': 'running',
+            'version': '0.1.0',
+            'deployment': {'backend': 'ansible', 'method': 'native-python-service'},
+            'verification': {'status': 'passed', 'check': 'systemd is-active', 'endpoint': 'http://' ~ ladcemas_host ~ ':' ~ (ladcemas_port | string) ~ '/'}
+          } | to_nice_json }}

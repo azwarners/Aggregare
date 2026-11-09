@@ -91,6 +91,12 @@
         editable: true
       register: python_app_install
 
+    - name: Install additional Python service packages
+      ansible.builtin.pip:
+        name: "{{ python_app_pip_packages }}"
+        virtualenv: "/opt/aggregare/venvs/{{ python_app_id }}"
+      when: python_app_pip_packages | length > 0
+
     - name: Check for generated Python package metadata changes after install
       ansible.builtin.command:
         argv: "{{ ['git', 'diff', '--quiet', '--'] + python_app_generated_source_files }}"
@@ -132,3 +138,32 @@
             'deployment': {'backend': 'ansible', 'method': 'native-python'},
             'verification': {'status': 'passed', 'check': 'import ' ~ python_app_module}
           } | to_nice_json }}
+
+    - name: Install native Python application systemd service
+      ansible.builtin.template:
+        src: python-app.service.j2
+        dest: "/etc/systemd/system/{{ python_app_service_name }}"
+        owner: root
+        group: root
+        mode: '0644'
+      when: python_app_service_enabled | bool
+      notify: Restart native Python application service
+
+    - name: Enable and start native Python application systemd service
+      ansible.builtin.systemd_service:
+        name: "{{ python_app_service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: python_app_service_enabled | bool
+
+- name: Remove native Python application systemd service
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ python_app_service_name }}"
+    state: absent
+  when: python_app_state == 'absent' and python_app_service_enabled | bool
+
+- name: Reload systemd after removing native Python application service
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: python_app_state == 'absent' and python_app_service_enabled | bool

@@ -2,9 +2,9 @@
   "id": "default",
   "display_name": "Aggregare default operating system",
   "description": "The default Aggregare system includes the AI chat applications and core productivity applications.",
-  "applications": ["ysparr", "apmatia", "open-webui", "memos", "habitsync", "vikunja", "openipe"],
+  "applications": ["ysparr", "apmatia", "open-webui", "memos", "habitsync", "vikunja", "openipe", "sidecaravan", "ladcemas"],
   "entry_point": "ansible/playbooks/default.yml",
-  "application_order": ["ysparr", "apmatia", "open-webui", "memos", "habitsync", "vikunja", "openipe"],
+  "application_order": ["ysparr", "apmatia", "open-webui", "memos", "habitsync", "vikunja", "openipe", "sidecaravan", "ladcemas"],
   "dependencies": {
     "open-webui": ["application:ysparr"],
     "habitsync": ["system:podman", "system:openssl", "system:apache2-utils"],
@@ -31,6 +31,8 @@
     "/var/lib/aggregare/memos",
     "/var/lib/aggregare/habitsync",
     "/var/lib/aggregare/vikunja",
+    "/var/lib/aggregare/openipe",
+    "/var/lib/aggregare/sidecaravan",
     "/etc/aggregare/secrets/habitsync-jwt",
     "/etc/aggregare/secrets/habitsync-password",
     "/etc/aggregare/habitsync-credentials"

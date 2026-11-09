@@ -74,5 +74,12 @@
       "endpoints": ["http://127.0.0.1:8001/api/version", "http://127.0.0.1:8001/api/public/ysparr/catalog", "http://127.0.0.1:8001/api/public/ysparr/resolve"]
     }
   ],
+  "cli": [
+    {
+      "name": "apmatia",
+      "path": "/opt/aggregare/venvs/apmatia/bin/apmatia",
+      "description": "Apmatia API-backed administration and module CLI."
+    }
+  ],
   "integrations": ["ysparr-versioned-extension"]
 }

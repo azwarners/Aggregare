@@ -30,6 +30,7 @@ class DeploymentReportTests(unittest.TestCase):
         ]}))
         entries = [
             {"id": "enabled", "display_name": "Enabled App", "services": [{"name": "enabled.service", "ports": [8765]}],
+             "cli": [{"name": "enabled-cli", "path": sys.executable, "description": "Test CLI"}],
              "authentication": {"manual_steps": ["Create the first user in the browser."]}},
             {"id": "disabled", "display_name": "Disabled App", "services": [{"name": "disabled.service", "ports": [8766]}]},
             {"id": "missing-meta", "display_name": "Missing Metadata App", "services": []},
@@ -63,6 +64,10 @@ class DeploymentReportTests(unittest.TestCase):
         self.assertIn("Missing Metadata App", content)
         self.assertIn("Configured endpoint: unknown or unavailable", content)
         self.assertIn("Service metadata is unavailable", content)
+
+    def test_report_lists_installed_application_cli(self):
+        content = self.render()
+        self.assertIn(f"CLI: `enabled-cli` at `{sys.executable}` (installed) — Test CLI", content)
 
     def test_report_redacts_credentials_and_credential_bearing_urls(self):
         content = self.render()

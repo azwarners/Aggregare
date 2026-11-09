@@ -1,0 +1,14 @@
+[Unit]
+Description=Sidecaravan MCP socket
+
+[Socket]
+ListenStream={{ sidecaravan_mcp_socket }}
+SocketMode=0660
+SocketUser=root
+SocketGroup={{ sidecaravan_group }}
+DirectoryMode=0750
+Service={{ sidecaravan_mcp_service_unit }}
+Accept=yes
+
+[Install]
+WantedBy=sockets.target

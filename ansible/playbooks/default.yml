@@ -9,3 +9,4 @@
 - import_playbook: vikunja.yml
 - import_playbook: openipe.yml
 - import_playbook: sidecaravan.yml
+- import_playbook: ladcemas.yml

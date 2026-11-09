@@ -29,6 +29,16 @@
         - "{{ sidecaravan_venv }}"
         - /var/lib/aggregare/status/sidecaravan.json
         - /var/lib/aggregare/status/sidecaravan-memory.json
+        - "/etc/systemd/system/{{ sidecaravan_mcp_socket_unit }}"
+        - "/etc/systemd/system/{{ sidecaravan_mcp_service_unit }}"
+
+    - name: Stop and disable the Sidecaravan MCP socket
+      ansible.builtin.systemd_service:
+        name: "{{ sidecaravan_mcp_socket_unit }}"
+        enabled: false
+        state: stopped
+        daemon_reload: true
+      failed_when: false
 
     # The store and token are administrator data, not managed runtime files.
     # This preserves the store and token so an absent -> present cycle can
@@ -333,6 +343,22 @@
         group: root
         mode: '0755'
 
+    - name: Install the Sidecaravan MCP systemd socket
+      ansible.builtin.template:
+        src: sidecaravan-mcp.socket.j2
+        dest: "/etc/systemd/system/{{ sidecaravan_mcp_socket_unit }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install the Sidecaravan MCP systemd session service
+      ansible.builtin.template:
+        src: sidecaravan-mcp@.service.j2
+        dest: "/etc/systemd/system/{{ sidecaravan_mcp_service_unit }}"
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: Install the configured team token
       ansible.builtin.copy:
         dest: "{{ sidecaravan_token_file }}"
@@ -380,6 +406,13 @@
         argv: ["{{ memkeeper_binary }}", doctor, --store, "{{ sidecaravan_store }}"]
       register: sidecaravan_doctor
       changed_when: false
+
+    - name: Enable and start the Sidecaravan MCP systemd socket
+      ansible.builtin.systemd_service:
+        name: "{{ sidecaravan_mcp_socket_unit }}"
+        enabled: true
+        state: started
+        daemon_reload: true
 
     - name: Write Sidecaravan memory deployment status
       ansible.builtin.copy:

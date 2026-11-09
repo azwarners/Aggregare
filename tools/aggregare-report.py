@@ -9,6 +9,7 @@ import json
 import os
 import re
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -172,6 +173,18 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
             lines.append(f"- Service: `{unit}` ({unit_state})")
         if not services:
             lines.append("- Service metadata is unavailable for this application")
+        for cli in entry.get("cli", []):
+            if not isinstance(cli, dict):
+                continue
+            cli_name = cli.get("name", "")
+            cli_path = cli.get("path", "")
+            if not isinstance(cli_name, str) or not isinstance(cli_path, str) or not cli_name or not cli_path:
+                continue
+            installed = Path(cli_path).is_file() or shutil.which(cli_path) is not None
+            description = cli.get("description", "")
+            suffix = f" — {description}" if isinstance(description, str) and description else ""
+            state = "installed" if installed else "not detected"
+            lines.append(f"- CLI: `{cli_name}` at `{cli_path}` ({state}){suffix}")
         auth = entry.get("authentication", {})
         bootstrap = auth.get("bootstrap", {}) if isinstance(auth, dict) else {}
         if isinstance(bootstrap, dict):
@@ -206,6 +219,7 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
         lines.append("No Aggregare-managed services were detected.")
     lines.extend([
         "", "## Management and logs", "",
+        "- Aggregare CLI: `aggregare report` and `aggregare summary` (`/usr/local/bin/aggregare`).",
         "- Reapply from an Aggregare checkout with `./install.sh`.",
         "- Aggregare configuration directory: `/etc/aggregare` (may contain secrets; keep protected).",
         "- Application status records: `/var/lib/aggregare/status`.",

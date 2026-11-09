@@ -5,8 +5,8 @@ Ansible automation. Aggregare is not one dashboard that replaces the
 applications it installs.
 
 The bootstrap installs the default Aggregare operating-system bundle together:
-Open WebUI, Ysparr, Apmatia, Memos, HabitSync, Vikunja, OpenIPE, and
-Sidecaravan shared team memory. The
+Open WebUI, Ysparr, Apmatia, Memos, HabitSync, Vikunja, OpenIPE, Sidecaravan
+shared team memory, and Ladcemas-Lite. The
 independent application playbooks remain available for later configuration and
 reapplication. Adding an application to the default bundle does not replace or
 remove applications already installed.
@@ -157,6 +157,12 @@ that is ever required.
 The service status should say `active`; the status record should report a
 passed verification. If you chose LAN access, use the LAN address printed by
 the installer instead of `127.0.0.1` in the `curl` command.
+
+Sidecaravan exposes its local MCP boundary through the administrator-protected
+`sidecaravan-mcp.socket` Unix socket and provides the `scv` and `memkeeper`
+commands. OpenIPE runs its REST API as `openipe.service` on loopback port 8002.
+Ladcemas-Lite runs as `ladcemas-lite.service` on loopback port 5000 and reads
+the generated deployment report.
 
 The default bundle includes AI chat and productivity applications. Open
 WebUI listens on port 8080 and Ysparr on port 8000; first-party Python
@@ -372,11 +378,12 @@ Some applications need extra setup:
   model file under `/var/lib/aggregare/llama.cpp/models`.
 - **ComfyUI** uses CPU mode and does not download model files. GPU setup is not
   part of this Phase 2 foundation.
-- **Apmatia** runs a loopback-only core API on port 8001. **OpenIPE** and
-  **Redless** remain Python packages or command-line tools.
-- **TroubleShell** is a desktop application, while **Ladcemas** still has no
-  installable role. **Sidecaravan** has an installable native Python/Memkeeper
-  role as described above; future agent-facing integration remains separate.
+- **Apmatia** runs a loopback-only core API on port 8001 and installs the
+  `apmatia` CLI in its isolated virtual environment. **OpenIPE** runs its
+  REST API as `openipe.service`; it does not yet ship an `openipe` CLI.
+- **TroubleShell** is a desktop application. **Ladcemas-Lite** is installed as
+  a local launcher service. **Sidecaravan** installs the `scv` and `memkeeper`
+  CLIs plus its MCP socket service.
 
 The default system bundle and catalog are the source of truth for the
 applications Aggregare installs. The bootstrap delegates to the same Ansible

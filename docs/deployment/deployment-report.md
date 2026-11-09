@@ -4,6 +4,13 @@ The installer generates a current report at `/var/lib/aggregare/deployment-repor
 
 The report contains sensitive credentials. The installer sets it to mode `0600` and makes the installing administrator its owner so `aggregare report` works for that account. Keep the report and any backups protected. `aggregare summary` shows service status and endpoints without displaying login credentials.
 
+Each installed application section also lists its catalog-declared CLI commands
+and whether their expected paths are present. The default report includes the
+`apmatia`, `scv`, and `memkeeper` commands, plus the `aggregare` report and
+summary commands. It also lists OpenIPE, Sidecaravan's MCP socket, and
+Ladcemas-Lite systemd units when they are installed. OpenIPE does not yet ship
+an `openipe` CLI.
+
 The HabitSync section includes the password-change command. From your home directory, run `cd ~/Aggregare && ./tools/aggregare-habitsync-password`; it prompts twice without echoing the password, applies the new login while preserving the installer's saved LAN access and base URL, removes the superseded initial login handoff, and refreshes this report without recording the new password.
 
 Read it from any working directory with:
