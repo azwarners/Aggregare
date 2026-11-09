@@ -114,6 +114,9 @@ class CatalogContractTests(unittest.TestCase):
         for role, marker in (("apmatia", "Expose Apmatia CLI through the system PATH"), ("ysparr", "Expose Ysparr CLI through the system PATH"), ("sidecaravan_memory", "Expose the Sidecaravan MCP CLI through the system PATH"), ("llama_cpp", "Expose llama-server through the system PATH")):
             tasks = (ROOT / "ansible/roles" / role / "tasks/main.yml").read_text()
             self.assertIn(marker, tasks)
+        apmatia_wrapper = (ROOT / "ansible/roles/apmatia/templates/apmatia-wrapper.j2").read_text()
+        self.assertIn("APMATIA_API_URL:-{{ apmatia_api_url }}", apmatia_wrapper)
+        self.assertIn("/bin/apmatia", apmatia_wrapper)
 
     def test_llama_endpoint_reports_model_ids_for_installer_selection(self):
         module_path = ROOT / "tools/aggregare-llama-endpoint"

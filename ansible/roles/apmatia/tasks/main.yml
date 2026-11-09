@@ -180,13 +180,12 @@
           - src/apmatia.egg-info/requires.txt
 
     - name: Expose Apmatia CLI through the system PATH
-      ansible.builtin.file:
-        src: /opt/aggregare/venvs/apmatia/bin/apmatia
+      ansible.builtin.template:
+        src: apmatia-wrapper.j2
         dest: /usr/local/bin/apmatia
-        state: link
         owner: root
         group: root
-        force: true
+        mode: '0755'
 
     - name: Create Apmatia service account
       ansible.builtin.user:

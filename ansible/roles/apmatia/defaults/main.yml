@@ -7,6 +7,7 @@ apmatia_source: https://github.com/azwarners/Apmatia.git
 apmatia_source_ref: feat/apmatia-13-authenticated-ysparr-agents
 apmatia_host: 127.0.0.1
 apmatia_port: 8001
+apmatia_api_url: "http://127.0.0.1:{{ apmatia_port }}/api"
 apmatia_home: /var/lib/apmatia/app
 apmatia_data_dir: /var/lib/apmatia/data
 apmatia_config_dir: /var/lib/apmatia/config
