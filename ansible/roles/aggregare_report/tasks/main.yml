@@ -42,6 +42,28 @@
     group: root
     mode: '0755'
 
+- name: Inspect the legacy Apmatia CLI link
+  ansible.builtin.stat:
+    path: /usr/local/bin/apmatia
+    follow: false
+  register: aggregare_apmatia_cli
+
+- name: Restore the Apmatia CLI wrapper after legacy report-link replacement
+  ansible.builtin.copy:
+    dest: /usr/local/bin/apmatia
+    owner: root
+    group: root
+    mode: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      export APMATIA_API_URL="${APMATIA_API_URL:-{{ aggregare_apmatia_api_url }}}"
+      exec "{{ aggregare_apmatia_venv }}/bin/apmatia" "$@"
+  when:
+    - aggregare_apmatia_cli.stat.islnk | default(false)
+    - aggregare_apmatia_cli.stat.lnk_source | default('') == aggregare_apmatia_venv ~ '/bin/apmatia'
+
 - name: Inspect managed CLI entry points
   ansible.builtin.stat:
     path: "{{ item.source }}"

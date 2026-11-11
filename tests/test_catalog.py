@@ -179,6 +179,8 @@ class CatalogContractTests(unittest.TestCase):
         report_tasks = (ROOT / "ansible/roles/aggregare_report/tasks/main.yml").read_text()
         self.assertIn("Expose installed managed CLI entry points through the system PATH", report_tasks)
         self.assertIn("Remove unavailable optional CLI entry points from the system PATH", report_tasks)
+        self.assertIn("Restore the Apmatia CLI wrapper after legacy report-link replacement", report_tasks)
+        self.assertIn("aggregare_apmatia_api_url: http://127.0.0.1:8001/api", report_defaults)
         self.assertIn("scv-mcp", report_defaults)
         self.assertNotIn("name: apmatia, source:", report_defaults)
         for role, marker in (("apmatia", "Expose Apmatia CLI through the system PATH"), ("ysparr", "Expose Ysparr CLI through the system PATH"), ("sidecaravan_memory", "Expose the Sidecaravan MCP CLI through the system PATH"), ("llama_cpp", "Expose llama-server through the system PATH")):

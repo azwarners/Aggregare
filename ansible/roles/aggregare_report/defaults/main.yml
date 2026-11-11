@@ -12,6 +12,8 @@ aggregare_report_loopback_applications:
   - ysparr
   - apmatia
 aggregare_report_version: unknown
+aggregare_apmatia_api_url: http://127.0.0.1:8001/api
+aggregare_apmatia_venv: /opt/aggregare/venvs/apmatia
 aggregare_managed_cli_links:
   - {name: ysparr, source: /opt/aggregare/venvs/ysparr/bin/ysparr}
   - {name: scv-mcp, source: /opt/aggregare/venvs/sidecaravan/bin/scv-mcp}
