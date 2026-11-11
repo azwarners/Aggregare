@@ -23,6 +23,7 @@ def test_sidecaravan_default_tracks_the_tested_integration_ref() -> None:
     defaults = ROLE_TASKS.parents[1] / "defaults/main.yml"
     text = defaults.read_text(encoding="utf-8")
     assert "sidecaravan_source_ref: feat/issue-5-shared-memory-interface" in text
+    assert "sidecaravan_rotate_token: false" in text
 
 
 def test_default_bundle_tracks_coordinated_apmatia_ysparr_ref() -> None:

@@ -21,6 +21,8 @@ sidecaravan_mcp_socket: /run/aggregare/sidecaravan-mcp.sock
 sidecaravan_mcp_socket_unit: sidecaravan-mcp.socket
 sidecaravan_mcp_service_unit: sidecaravan-mcp@.service
 sidecaravan_team_token: ''
+# One-shot administrative rotation. Leave false for normal idempotent runs.
+sidecaravan_rotate_token: false
 
 memkeeper_version: v0.5.3
 memkeeper_target: x86_64-unknown-linux-gnu

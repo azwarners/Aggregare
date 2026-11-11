@@ -24,6 +24,7 @@ CODING_LLM_URL=""
 CODING_MODEL=""
 LAN_ACCESS=""
 LEGACY_RESUME=false
+ROTATE_SIDECARAVAN_TOKEN=false
 
 while (($#)); do
   case "$1" in
@@ -86,8 +87,12 @@ while (($#)); do
       RESET_INSTALL_PROGRESS=true
       shift
       ;;
+    --rotate-sidecaravan-token)
+      ROTATE_SIDECARAVAN_TOKEN=true
+      shift
+      ;;
     --help|-h)
-      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--identity-domain FQDN --identity-origin HTTPS_URL (--kanidm-tls-chain FILE --kanidm-tls-key FILE | --kanidm-development-certificate)] [--identity-ca-file FILE] [--llama-cpp-url URL] [--chat-model ID --coding-llm-url URL --coding-model ID] [--reset-progress]\n'
+      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--identity-domain FQDN --identity-origin HTTPS_URL (--kanidm-tls-chain FILE --kanidm-tls-key FILE | --kanidm-development-certificate)] [--identity-ca-file FILE] [--llama-cpp-url URL] [--chat-model ID --coding-llm-url URL --coding-model ID] [--reset-progress] [--rotate-sidecaravan-token]\n'
       exit 0
       ;;
     *) printf 'Installer stopped: unknown option: %s\n' "$1" >&2; exit 2 ;;
@@ -588,7 +593,7 @@ localhost ansible_connection=local
 EOF
 fi
 
-BOOTSTRAP_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" "$LLAMA_CPP_URL" "$CHAT_MODEL" "$CODING_LLM_URL" "$CODING_MODEL" <<'PY'
+BOOTSTRAP_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" "$LLAMA_CPP_URL" "$CHAT_MODEL" "$CODING_LLM_URL" "$CODING_MODEL" "$ROTATE_SIDECARAVAN_TOKEN" <<'PY'
 import json
 import sys
 
@@ -604,6 +609,7 @@ print(json.dumps({
     "ysparr_chat_model": sys.argv[4],
     "ysparr_coding_base_url": sys.argv[5],
     "ysparr_coding_model": sys.argv[6],
+    "sidecaravan_rotate_token": sys.argv[7] == "true",
     "ansible_become": False,
 }))
 PY

@@ -3,6 +3,8 @@
   ansible.builtin.assert:
     that:
       - sidecaravan_state in ['present', 'absent']
+      - sidecaravan_rotate_token is boolean
+      - not (sidecaravan_rotate_token | bool and sidecaravan_team_token | trim | length > 0)
       - sidecaravan_source is match('^https://')
       - sidecaravan_source_ref | length > 0
       - sidecaravan_source_path | length == 0 or sidecaravan_source_path is match('^/')
@@ -395,6 +397,24 @@
         group: "{{ sidecaravan_group }}"
         mode: '0640'
       when: sidecaravan_team_token | trim | length > 0
+      no_log: true
+
+    - name: Generate a replacement team token when explicitly requested
+      ansible.builtin.command:
+        argv: [/usr/bin/openssl, rand, -base64, '32']
+      register: sidecaravan_generated_team_token
+      changed_when: true
+      when: sidecaravan_rotate_token | bool
+      no_log: true
+
+    - name: Install the generated replacement team token
+      ansible.builtin.copy:
+        dest: "{{ sidecaravan_token_file }}"
+        content: "{{ sidecaravan_generated_team_token.stdout | trim }}\n"
+        owner: root
+        group: "{{ sidecaravan_group }}"
+        mode: '0640'
+      when: sidecaravan_rotate_token | bool
       no_log: true
 
     - name: Check for the initialized Sidecaravan store and token
