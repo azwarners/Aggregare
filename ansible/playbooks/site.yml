@@ -2,6 +2,7 @@
 # Installs every application with an available Ansible implementation.
 # Desktop applications target the separate [desktop] inventory group.
 - import_playbook: ysparr.yml
+- import_playbook: sidecaravan.yml
 - import_playbook: apmatia.yml
 - import_playbook: openipe.yml
 - import_playbook: redless.yml
@@ -17,5 +18,4 @@
 - import_playbook: grafana.yml
 - import_playbook: troubleshell.yml
 - import_playbook: report.yml
-- import_playbook: sidecaravan.yml
 - import_playbook: ladcemas.yml

@@ -13,6 +13,11 @@ Environment=APMATIA_DATA_DIR={{ apmatia_data_dir }}
 Environment=APMATIA_CONFIG_DIR={{ apmatia_config_dir }}
 Environment=APMATIA_SERVER_HOST={{ apmatia_host }}
 Environment=APMATIA_SERVER_PORT={{ apmatia_port }}
+Environment=APMATIA_SIDECARAVAN_ENABLED={{ apmatia_sidecaravan_enabled | ternary('1', '0') }}
+Environment=APMATIA_SIDECARAVAN_COMMAND={{ apmatia_sidecaravan_command }}
+Environment=SCV_DATA_DIR={{ apmatia_sidecaravan_data_dir }}
+Environment=SCV_STORE={{ apmatia_sidecaravan_store }}
+Environment=SCV_TOKEN_FILE={{ apmatia_sidecaravan_token_file }}
 ExecStart=/opt/aggregare/venvs/apmatia/bin/python /opt/aggregare/apmatia/scripts/run.py
 Restart=on-failure
 RestartSec=5s

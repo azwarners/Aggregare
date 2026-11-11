@@ -5,6 +5,11 @@
       - apmatia_state in ['present', 'absent']
       - apmatia_host == '127.0.0.1'
       - apmatia_port | int > 0
+      - apmatia_sidecaravan_command is match('^/')
+      - apmatia_sidecaravan_group is match('^[a-z_][a-z0-9_-]*$')
+      - apmatia_sidecaravan_data_dir is match('^/')
+      - apmatia_sidecaravan_store is match('^/')
+      - apmatia_sidecaravan_token_file is match('^/')
       - ansible_facts.distribution == 'Ubuntu'
       - ansible_facts.distribution_version is version('24.04', '>=')
     fail_msg: Apmatia is supported on Ubuntu 24.04+ and is intentionally bound to loopback.
@@ -194,6 +199,17 @@
         home: /var/lib/apmatia
         create_home: true
         shell: /usr/sbin/nologin
+
+    - name: Ensure the Sidecaravan access group exists for Apmatia integration
+      ansible.builtin.group:
+        name: "{{ apmatia_sidecaravan_group }}"
+        state: present
+
+    - name: Grant Apmatia access to the Ansible-managed Sidecaravan token and store
+      ansible.builtin.user:
+        name: apmatia
+        groups: "{{ apmatia_sidecaravan_group }}"
+        append: true
 
     - name: Create Apmatia runtime directories
       ansible.builtin.file:

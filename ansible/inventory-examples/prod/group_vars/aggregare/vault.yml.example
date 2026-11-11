@@ -3,3 +3,6 @@
 habitsync_jwt_secret: "GENERATE-A-DIFFERENT-PRODUCTION-ONLY-KEY"
 habitsync_recovery_user: "replace-with-a-prod-local-recovery-user"
 habitsync_recovery_password_hash: "GENERATE-A-BCRYPT-HASH-OF-A-UNIQUE-PROD-PASSWORD"
+# Optional: set this to a stable team token for repeatable Sidecaravan access.
+# Leave it unset to let the role generate and preserve one on first install.
+# sidecaravan_team_token: "GENERATE-A-DIFFERENT-UNIQUE-TEAM-TOKEN"

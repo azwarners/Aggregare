@@ -18,3 +18,9 @@ apmatia_upstream_base_url: ''
 apmatia_upstream_api_key: ''
 apmatia_upstream_config_path: /etc/aggregare/ysparr-upstream.json
 apmatia_public_base_url: "http://{{ apmatia_host }}:{{ apmatia_port }}"
+apmatia_sidecaravan_enabled: true
+apmatia_sidecaravan_command: /usr/local/bin/scv-mcp
+apmatia_sidecaravan_group: aggregare-memory
+apmatia_sidecaravan_data_dir: /var/lib/aggregare/sidecaravan
+apmatia_sidecaravan_store: /var/lib/aggregare/sidecaravan/team.sqlite
+apmatia_sidecaravan_token_file: /var/lib/aggregare/sidecaravan/team.token

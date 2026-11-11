@@ -32,3 +32,20 @@ def test_default_bundle_tracks_coordinated_apmatia_ysparr_ref() -> None:
     expected = "feat/apmatia-13-authenticated-ysparr-agents"
     assert f"ysparr_source_ref: {expected}" in ysparr_defaults
     assert f"apmatia_source_ref: {expected}" in apmatia_defaults
+
+
+def test_apmatia_is_wired_to_the_ansible_managed_sidecaravan_boundary() -> None:
+    role = ROLE_TASKS.parents[1].parent / "apmatia"
+    defaults = (role / "defaults/main.yml").read_text(encoding="utf-8")
+    service = (role / "templates/apmatia-core.service.j2").read_text(encoding="utf-8")
+    assert "apmatia_sidecaravan_enabled: true" in defaults
+    assert "Environment=APMATIA_SIDECARAVAN_ENABLED=" in service
+    assert "Environment=SCV_TOKEN_FILE=" in service
+    assert "Environment=SCV_STORE=" in service
+
+
+def test_aggregate_playbooks_install_sidecaravan_before_apmatia() -> None:
+    playbooks = ROLE_TASKS.parents[3] / "playbooks"
+    for playbook in (playbooks / "site.yml", playbooks / "default.yml"):
+        lines = playbook.read_text(encoding="utf-8").splitlines()
+        assert lines.index("- import_playbook: sidecaravan.yml") < lines.index("- import_playbook: apmatia.yml")
