@@ -273,7 +273,11 @@ The same automatic selection or numbered list is used for the coding endpoint.
 The installer also collects the coding endpoint URL. The chat endpoint
 continues to serve Open WebUI chats and Apmatia agents. Ysparr lists the
 configured coding model as a separate selectable model; requests using that
-ID go to the coding endpoint. Enter endpoint addresses as `HOST:PORT` (for
+ID go to the coding endpoint. Apmatia agents declare their backend type as
+`openai_compatible`; Aggregare automatically maps that type to the selected
+Ysparr chat model. Operators can override or add `ysparr_model_type_routes`
+when an extension requires a different upstream model ID. Enter endpoint
+addresses as `HOST:PORT` (for
 example `192.168.1.42:8000`) or include `http://` or `https://`; a missing
 scheme defaults to `http://`. URLs ending in `/v1` are accepted. Ysparr stores
 normalized root URLs and adds `/v1` to API requests. These values are saved in
@@ -287,7 +291,8 @@ To supply the endpoint without entering it at the installer prompt, use
 `./install.sh --llama-cpp-url http://HOST:PORT --chat-model CHAT_ID --coding-llm-url http://CODE_HOST:PORT --coding-model CODE_ID`; host-time, identity, and LAN
 prompts still require a terminal. For direct or unattended
 Ansible use, set `ysparr_upstream_base_url`, `ysparr_chat_model`,
-`ysparr_coding_base_url`, and `ysparr_coding_model` in inventory variables and run
+`ysparr_coding_base_url`, `ysparr_coding_model`, and optionally
+`ysparr_model_type_routes` in inventory variables and run
 `ansible-playbook -i INVENTORY playbooks/default.yml --become`; the role
 checks both `/v1/models` endpoints and verifies the configured model IDs,
 configures Ysparr, and persists the settings. To change an endpoint or model

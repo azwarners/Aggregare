@@ -77,6 +77,14 @@ class CatalogContractTests(unittest.TestCase):
         self.assertIn("Select the first available chat model when the saved selection is stale", ysparr_tasks)
         self.assertIn("ysparr_upstream_models_probe.json.data[0].id", ysparr_tasks)
 
+    def test_ysparr_routes_extension_model_types_to_the_selected_chat_model(self):
+        defaults = (ROOT / "ansible/roles/ysparr/defaults/main.yml").read_text()
+        tasks = (ROOT / "ansible/roles/ysparr/tasks/main.yml").read_text()
+        template = (ROOT / "ansible/roles/ysparr/templates/ysparr.env.j2").read_text()
+        self.assertIn("ysparr_model_type_routes: {}", defaults)
+        self.assertIn("'openai_compatible': ysparr_chat_model_effective", tasks)
+        self.assertIn("ysparr_model_type_routes_effective", template)
+
     def test_default_bundle_and_report_metadata_cover_first_party_components(self):
         preset = load_json("catalog/v1/presets/default.json")
         self.assertIn("ladcemas", preset["applications"])

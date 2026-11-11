@@ -7,6 +7,12 @@
       - ansible_facts.distribution_version is version('24.04', '>=')
     fail_msg: Ysparr is currently supported on Ubuntu 24.04 and later.
 
+- name: Validate Ysparr model-type routes
+  ansible.builtin.assert:
+    that:
+      - ysparr_model_type_routes is mapping
+    fail_msg: ysparr_model_type_routes must be a mapping of preferred model types to upstream model IDs.
+
 - name: Check the Ysparr port contract
   ansible.builtin.import_role:
     name: port_check
@@ -251,6 +257,32 @@
         that:
           - ysparr_chat_model_effective in (ysparr_upstream_models_probe.json.data | map(attribute='id') | list)
         fail_msg: The upstream did not return a usable chat model from /v1/models.
+
+    - name: Build effective Ysparr model-type routes
+      ansible.builtin.set_fact:
+        ysparr_model_type_routes_effective: >-
+          {{
+            ({'openai_compatible': ysparr_chat_model_effective}
+             if ysparr_chat_model_effective | length > 0 else {})
+            | combine(ysparr_model_type_routes)
+          }}
+      no_log: true
+
+    - name: Validate effective Ysparr model-type routes
+      ansible.builtin.assert:
+        that:
+          - item.key is string
+          - item.key | trim | length > 0
+          - item.value is string
+          - item.value | trim | length > 0
+          - item.value is match('^\\S+$')
+        fail_msg: >-
+          Each ysparr_model_type_routes value must be a non-empty upstream model
+          ID without whitespace.
+      loop: "{{ ysparr_model_type_routes_effective | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      no_log: true
 
     - name: Persist protected Ysparr upstream settings
       ansible.builtin.template:
