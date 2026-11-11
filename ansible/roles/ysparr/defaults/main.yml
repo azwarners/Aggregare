@@ -1,6 +1,8 @@
 ---
 ysparr_state: present
-ysparr_version: 0.1.0
+# Bump when the managed Ysparr branch changes so installer recovery does not
+# preserve a healthy but stale source checkout.
+ysparr_version: 0.1.1
 # Keep the default development bundle aligned with the coordinated Apmatia
 # authentication work. Promote this back to main after both branches land.
 ysparr_source_ref: feat/apmatia-13-authenticated-ysparr-agents
