@@ -13,6 +13,13 @@ not prevent Ysparr from serving upstream models. An unavailable Apmatia means
 its virtual agents are temporarily missing until the service and published
 catalog return.
 
+Open WebUI is intentionally chat-only by default. Aggregare sets
+`ENABLE_PLUGINS=false`, `ENABLE_CODE_EXECUTION=false`, and
+`ENABLE_CODE_INTERPRETER=false` in the persistent Quadlet service definition.
+These settings disable the built-in tool and code-execution surfaces and take
+effect after `open-webui.service` restarts. Reapplying the playbook rewrites
+the same service definition without removing Open WebUI data or accounts.
+
 The default local endpoints are:
 
 | Service | URL | Exposure |
@@ -115,6 +122,21 @@ sudo systemctl start ysparr.service apmatia-core.service open-webui.service
 ```
 
 ## VM smoke checks
+
+For a clean install, verify the generated environment before testing the UI:
+
+```sh
+sudo grep -E '^Environment=ENABLE_(PLUGINS|CODE_EXECUTION|CODE_INTERPRETER)=' \
+  /etc/containers/systemd/open-webui.container
+```
+
+The output must contain all three variables with value `false`. After
+`open-webui.service` is active, verify that Tools/Functions/tool-server and
+in-chat code execution controls are unavailable in the Open WebUI UI, then
+send a normal Ysparr chat and select a published Apmatia starter. On an
+existing install, reapply the playbook, restart or recreate Open WebUI, and
+confirm the same three environment values remain while the existing chats,
+accounts, and saved Ysparr connection are still present.
 
 After installation and again after a reboot, run the diagnostic report above,
 then check the service and API paths:

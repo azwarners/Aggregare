@@ -236,12 +236,16 @@ Apmatia prompt as published. Complete a chat from the Open WebUI interface as a
 separate check; the command above tests Ysparr directly, not the browser path.
 
 Aggregare disables Open WebUI's Ollama, direct provider, web search, code
-execution, code interpreter, memory, and subagent features. It does not
-configure Open WebUI Knowledge/RAG, workspace tools, functions, or pipelines.
-The pinned Open WebUI version has no environment-level master switch for all
-of those features, so do not treat them as part of this integration or enable
-them without separately configuring and securing them. No Open WebUI plugin,
-pipeline, RAG, or custom agent content is installed by Aggregare.
+execution, code interpreter, memory, subagents, and plugins. The plugin master
+switch also disables Open WebUI's built-in Tools, Functions, OpenAPI/MCP tool
+servers, and Open Terminal integrations. Open WebUI is intentionally a
+chat-only frontend in Aggregare; optional upstream capabilities remain off
+unless a future configuration explicitly enables them. These environment
+settings are applied to the generated service definition and require an Open
+WebUI service restart to take effect. Reapplying Aggregare or recreating the
+service preserves the settings and the existing Open WebUI database, accounts,
+chats, and Ysparr connection. Aggregare does not configure Open WebUI
+Knowledge/RAG or install plugin, pipeline, RAG, or custom agent content.
 
 HabitSync receives a generated local login using the account that ran the
 installer as its username; the initial login appears in the deployment report.

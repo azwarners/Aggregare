@@ -21,6 +21,7 @@
       ENABLE_OLLAMA_API: 'false'
       ENABLE_DIRECT_CONNECTIONS: 'false'
       ENABLE_DIRECT_INTEGRATIONS: 'false'
+      ENABLE_PLUGINS: 'false'
       ENABLE_CODE_EXECUTION: 'false'
       ENABLE_CODE_INTERPRETER: 'false'
       ENABLE_MEMORIES: 'false'

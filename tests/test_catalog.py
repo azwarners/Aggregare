@@ -72,6 +72,24 @@ class CatalogContractTests(unittest.TestCase):
         default_playbook = (ROOT / "ansible/playbooks/default.yml").read_text()
         self.assertNotIn("troubleshell.yml", default_playbook)
 
+    def test_open_webui_is_chat_only_by_default(self):
+        open_webui = yaml.safe_load((ROOT / "ansible/playbooks/open-webui.yml").read_text())
+        environment = open_webui[0]["vars"]["application_environment"]
+        self.assertEqual(
+            {name: environment[name] for name in (
+                "ENABLE_PLUGINS",
+                "ENABLE_CODE_EXECUTION",
+                "ENABLE_CODE_INTERPRETER",
+            )},
+            {
+                "ENABLE_PLUGINS": "false",
+                "ENABLE_CODE_EXECUTION": "false",
+                "ENABLE_CODE_INTERPRETER": "false",
+            },
+        )
+        quadlet_template = (ROOT / "ansible/roles/container_app/templates/application.container.j2").read_text()
+        self.assertIn("Environment={{ key }}={{ value }}", quadlet_template)
+
     def test_ysparr_can_follow_the_current_upstream_model(self):
         ysparr_tasks = (ROOT / "ansible/roles/ysparr/tasks/main.yml").read_text()
         self.assertIn("Select the first available chat model when the saved selection is stale", ysparr_tasks)
