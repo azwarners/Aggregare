@@ -180,6 +180,7 @@ class CatalogContractTests(unittest.TestCase):
         self.assertIn("Expose installed managed CLI entry points through the system PATH", report_tasks)
         self.assertIn("Remove unavailable optional CLI entry points from the system PATH", report_tasks)
         self.assertIn("scv-mcp", report_defaults)
+        self.assertNotIn("name: apmatia, source:", report_defaults)
         for role, marker in (("apmatia", "Expose Apmatia CLI through the system PATH"), ("ysparr", "Expose Ysparr CLI through the system PATH"), ("sidecaravan_memory", "Expose the Sidecaravan MCP CLI through the system PATH"), ("llama_cpp", "Expose llama-server through the system PATH")):
             tasks = (ROOT / "ansible/roles" / role / "tasks/main.yml").read_text()
             self.assertIn(marker, tasks)

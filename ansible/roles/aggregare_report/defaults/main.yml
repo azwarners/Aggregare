@@ -13,7 +13,6 @@ aggregare_report_loopback_applications:
   - apmatia
 aggregare_report_version: unknown
 aggregare_managed_cli_links:
-  - {name: apmatia, source: /opt/aggregare/venvs/apmatia/bin/apmatia}
   - {name: ysparr, source: /opt/aggregare/venvs/ysparr/bin/ysparr}
   - {name: scv-mcp, source: /opt/aggregare/venvs/sidecaravan/bin/scv-mcp}
   - {name: llama-server, source: /opt/aggregare/llama.cpp/build/bin/llama-server}
