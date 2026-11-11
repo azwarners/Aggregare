@@ -244,8 +244,11 @@ unless a future configuration explicitly enables them. These environment
 settings are applied to the generated service definition and require an Open
 WebUI service restart to take effect. Reapplying Aggregare or recreating the
 service preserves the settings and the existing Open WebUI database, accounts,
-chats, and Ysparr connection. Aggregare does not configure Open WebUI
-Knowledge/RAG or install plugin, pipeline, RAG, or custom agent content.
+chats, and Ysparr connection. Aggregare also persists the model-default
+metadata that disables built-in tools and removes attached Tools from managed
+model records while preserving unrelated model settings. Aggregare does not
+configure Open WebUI Knowledge/RAG or install plugin, pipeline, RAG, or custom
+agent content.
 
 HabitSync receives a generated local login using the account that ran the
 installer as its username; the initial login appears in the deployment report.

@@ -24,6 +24,7 @@
       ENABLE_PLUGINS: 'false'
       ENABLE_CODE_EXECUTION: 'false'
       ENABLE_CODE_INTERPRETER: 'false'
+      DEFAULT_MODEL_METADATA: '{"capabilities":{"builtin_tools":false},"toolIds":[]}'
       ENABLE_MEMORIES: 'false'
       ENABLE_SUBAGENTS: 'false'
       ENABLE_AUTOMATIONS: 'false'
@@ -41,3 +42,30 @@
   - name: Apply the shared OCI application role
     ansible.builtin.import_role:
       name: container_app
+
+  - name: Enforce chat-only model defaults without resetting unrelated settings
+    ansible.builtin.command:
+      argv:
+        - python3
+        - "{{ playbook_dir }}/../../tools/aggregare-open-webui-chat-only"
+        - --database
+        - "{{ application_data_path }}/webui.db"
+    register: open_webui_chat_only
+    changed_when: (open_webui_chat_only.stdout | from_json).changed
+
+  - name: Restart Open WebUI after changing persisted model defaults
+    ansible.builtin.systemd_service:
+      name: open-webui.service
+      state: restarted
+    when: (open_webui_chat_only.stdout | from_json).changed
+
+  - name: Verify Open WebUI after applying persisted model defaults
+    ansible.builtin.uri:
+      url: "http://{{ application_bind_address }}:{{ application_host_port }}{{ application_health_path }}"
+      method: GET
+      status_code: "{{ application_health_status_codes }}"
+    register: open_webui_chat_only_health
+    retries: 30
+    delay: 20
+    until: open_webui_chat_only_health.status | default(0) in application_health_status_codes
+    when: (open_webui_chat_only.stdout | from_json).changed

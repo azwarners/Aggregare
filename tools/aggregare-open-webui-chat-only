@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Enforce Aggregare's chat-only Open WebUI model metadata defaults."""
+
+import argparse
+import json
+import os
+import sqlite3
+import time
+from pathlib import Path
+
+
+def _object(value, description):
+    if value is None:
+        return {}
+    try:
+        parsed = json.loads(value) if isinstance(value, str) else value
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Open WebUI {description} is not valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(f"Open WebUI {description} must be a JSON object")
+    return parsed
+
+
+def enforce(database):
+    """Update only tool-related settings and return a change summary."""
+
+    database = Path(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+
+        config_row = connection.execute(
+            "SELECT value FROM config WHERE key = ?",
+            ("models.default_metadata",),
+        ).fetchone()
+        default_metadata = _object(config_row[0] if config_row else None, "model defaults")
+        capabilities = _object(default_metadata.get("capabilities"), "model capabilities")
+        config_changed = (
+            capabilities.get("builtin_tools") is not False
+            or default_metadata.get("toolIds") != []
+        )
+        if config_changed:
+            capabilities["builtin_tools"] = False
+            default_metadata["capabilities"] = capabilities
+            default_metadata["toolIds"] = []
+            encoded = json.dumps(default_metadata, separators=(",", ":"), sort_keys=True)
+            if config_row:
+                connection.execute(
+                    "UPDATE config SET value = ?, updated_at = ? WHERE key = ?",
+                    (encoded, int(time.time() * 1000), "models.default_metadata"),
+                )
+            else:
+                connection.execute(
+                    "INSERT INTO config(key, value, updated_at) VALUES (?, ?, ?)",
+                    ("models.default_metadata", encoded, int(time.time() * 1000)),
+                )
+
+        model_changes = 0
+        for model_id, raw_meta in connection.execute("SELECT id, meta FROM model").fetchall():
+            metadata = _object(raw_meta, f"metadata for model {model_id}")
+            model_capabilities = _object(metadata.get("capabilities"), f"capabilities for model {model_id}")
+            model_changed = (
+                model_capabilities.get("builtin_tools") is not False
+                or metadata.get("toolIds") != []
+            )
+            if not model_changed:
+                continue
+            model_capabilities["builtin_tools"] = False
+            metadata["capabilities"] = model_capabilities
+            metadata["toolIds"] = []
+            connection.execute(
+                "UPDATE model SET meta = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(metadata, separators=(",", ":"), sort_keys=True), int(time.time() * 1000), model_id),
+            )
+            model_changes += 1
+
+        connection.commit()
+
+    return {
+        "changed": config_changed or model_changes > 0,
+        "config_changed": config_changed,
+        "model_changes": model_changes,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--database", required=True, type=Path)
+    args = parser.parse_args()
+    print(json.dumps(enforce(args.database), sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

@@ -2,12 +2,14 @@ import json
 from importlib.machinery import SourceFileLoader
 import importlib.util
 import io
+import os
 from pathlib import Path
 import subprocess
 import sys
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
+import sqlite3
 
 import yaml
 from jsonschema import Draft202012Validator
@@ -87,8 +89,49 @@ class CatalogContractTests(unittest.TestCase):
                 "ENABLE_CODE_INTERPRETER": "false",
             },
         )
+        self.assertEqual(
+            json.loads(environment["DEFAULT_MODEL_METADATA"]),
+            {"capabilities": {"builtin_tools": False}, "toolIds": []},
+        )
         quadlet_template = (ROOT / "ansible/roles/container_app/templates/application.container.j2").read_text()
-        self.assertIn("Environment={{ key }}={{ value }}", quadlet_template)
+        self.assertIn("Environment={{ key }}={{ value | quote }}", quadlet_template)
+
+    def test_open_webui_chat_only_migration_is_nondestructive_and_idempotent(self):
+        module_path = ROOT / "tools/aggregare-open-webui-chat-only"
+        loader = SourceFileLoader("aggregare_open_webui_chat_only", str(module_path))
+        spec = importlib.util.spec_from_file_location("aggregare_open_webui_chat_only", module_path, loader=loader)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+
+        database = self._tmp_database()
+        with sqlite3.connect(database) as connection:
+            connection.executescript(
+                """
+                CREATE TABLE config (key TEXT PRIMARY KEY, value JSON NOT NULL, updated_at INTEGER);
+                CREATE TABLE model (id TEXT PRIMARY KEY, meta JSON, updated_at INTEGER);
+                INSERT INTO config VALUES ('models.default_metadata', '{"capabilities":{"vision":true},"toolIds":["unsafe"]}', 1);
+                INSERT INTO model VALUES ('starter', '{"description":"preserve","capabilities":{"vision":true},"toolIds":["unsafe"]}', 1);
+                """
+            )
+
+        self.assertEqual(migration.enforce(database)["changed"], True)
+        with sqlite3.connect(database) as connection:
+            config = json.loads(connection.execute("SELECT value FROM config WHERE key = 'models.default_metadata'").fetchone()[0])
+            model = json.loads(connection.execute("SELECT meta FROM model WHERE id = 'starter'").fetchone()[0])
+        self.assertEqual(config["capabilities"], {"builtin_tools": False, "vision": True})
+        self.assertEqual(config["toolIds"], [])
+        self.assertEqual(model["description"], "preserve")
+        self.assertEqual(model["capabilities"], {"builtin_tools": False, "vision": True})
+        self.assertEqual(model["toolIds"], [])
+        self.assertFalse(migration.enforce(database)["changed"])
+
+    @staticmethod
+    def _tmp_database():
+        import tempfile
+
+        descriptor, path = tempfile.mkstemp(suffix=".db")
+        os.close(descriptor)
+        return Path(path)
 
     def test_ysparr_can_follow_the_current_upstream_model(self):
         ysparr_tasks = (ROOT / "ansible/roles/ysparr/tasks/main.yml").read_text()
