@@ -173,7 +173,8 @@ printf '%s\n' '{"type":"capabilities"}' | redless-machine
 
 `redless-machine` is a root-owned launcher at `/usr/local/bin/redless-machine`.
 It automatically drops to the `redless` UID/GID before executing Redless, sets
-the persistent profile from `/etc/redless/`, and preserves the JSONL contract.
+the persistent private profile from `/var/lib/redless/.config/`, and preserves
+the JSONL contract.
 Callers do not switch users and do not need a Redless password. Task workspaces,
 run artifacts, and logs are stored in `/var/lib/redless/workspaces`,
 `/var/lib/redless/runs`, and `/var/log/redless`; configured primary users receive

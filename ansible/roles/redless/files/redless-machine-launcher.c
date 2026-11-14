@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
     }
     clearenv();
     if (setenv("HOME", account->pw_dir, 1) != 0 ||
-        setenv("MSWEA_CONFIG_DIR", "/etc/redless", 1) != 0 ||
+        setenv("MSWEA_CONFIG_DIR", "/var/lib/redless/.config", 1) != 0 ||
         setenv("PATH", "/usr/local/bin:/usr/bin:/bin", 1) != 0) {
         fprintf(stderr, "redless-machine: cannot configure worker environment\n");
         return 126;

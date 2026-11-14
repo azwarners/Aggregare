@@ -17,13 +17,16 @@ def test_redless_role_enforces_account_and_filesystem_isolation():
     tasks = (ROOT / "ansible/roles/redless/tasks/main.yml").read_text()
     assert "name: redless" in tasks
     assert "home: \"{{ redless_home }}\"" in tasks
-    assert "shell: /bin/bash" in tasks
+    assert "path: /bin/bash" in tasks
+    assert "else '/bin/sh'" in tasks
     assert "groups: \"{{ redless_group }}\"" in tasks
     assert "aggregare_primary_users" in tasks
     assert "setfacl" in tasks
-    assert "d:g:{{ redless_group }}:rwx" in tasks
-    assert "mode: '0644'" in tasks
-    assert "mode: '0755'" in tasks
+    assert "password_lock: true" in tasks
+    assert "append: false" in tasks
+    assert "d:g:{{ redless_group }}:r-x" in tasks
+    assert "mode: '0600'" in tasks
+    assert "mode: '0710'" in tasks
     assert "api_key: llama.cpp-placeholder" in tasks
     assert "gcc" in tasks
     assert "mode: '4755'" in tasks

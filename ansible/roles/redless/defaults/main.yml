@@ -14,4 +14,7 @@ redless_primary_users: "{{ aggregare_primary_users }}"
 redless_workspace_path: /var/lib/redless/workspaces
 redless_run_path: /var/lib/redless/runs
 redless_log_path: /var/log/redless
-redless_config_path: /etc/redless
+# Keep the worker profile inside the service account's private home.  The
+# configured human users share redless for result read access, so this must
+# not be stored in a group-readable path.
+redless_config_path: "{{ redless_home }}/.config"
