@@ -1,0 +1,17 @@
+redless_state: present
+redless_user: redless
+redless_group: redless
+redless_home: /var/lib/redless
+redless_source: https://github.com/azwarners/Redless.git
+redless_ref: 16bb8dd2d68582a55394075dfb7fbf5bb2924385
+redless_version: source-16bb8dd
+redless_coding_base_url: "{{ ysparr_coding_base_url | default('http://127.0.0.1:8000') }}"
+redless_coding_model: "{{ ysparr_coding_model | default('') }}"
+# Source of truth for human access is the existing Aggregare host configuration.
+# The installer supplies this explicitly; an empty list never means "all users".
+aggregare_primary_users: []
+redless_primary_users: "{{ aggregare_primary_users }}"
+redless_workspace_path: /var/lib/redless/workspaces
+redless_run_path: /var/lib/redless/runs
+redless_log_path: /var/log/redless
+redless_config_path: /etc/redless

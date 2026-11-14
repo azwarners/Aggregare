@@ -1,0 +1,182 @@
+---
+- name: Validate Redless deployment configuration
+  ansible.builtin.assert:
+    that:
+      - redless_state in ['present', 'absent']
+      - redless_source is match('^https://')
+      - redless_ref is match('^[0-9a-f]{40}$')
+      - aggregare_primary_users is sequence
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version is version('24.04', '>=')
+    fail_msg: Redless requires a pinned HTTPS source and a configured list of primary Aggregare users.
+
+- name: Remove Redless
+  when: redless_state == 'absent'
+  block:
+    - name: Stop and remove the Redless service if present
+      ansible.builtin.systemd_service:
+        name: redless.service
+        state: stopped
+        enabled: false
+      failed_when: false
+    - name: Remove Redless installation and protected configuration
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /opt/aggregare/redless
+        - /opt/aggregare/venvs/redless
+        - "{{ redless_config_path }}"
+        - /etc/systemd/system/redless.service
+        - /usr/local/bin/redless-machine
+        - "{{ redless_home }}"
+        - "{{ redless_log_path }}"
+    - name: Remove the Redless account without affecting its group members
+      ansible.builtin.user:
+        name: "{{ redless_user }}"
+        state: absent
+        remove: false
+    - name: Remove the Redless primary group
+      ansible.builtin.group:
+        name: "{{ redless_group }}"
+        state: absent
+
+- name: Install and configure Redless
+  when: redless_state == 'present'
+  block:
+    - name: Install Redless filesystem ACL and Python prerequisites
+      ansible.builtin.apt:
+        name: [acl, git, python3, python3-venv, python3-pip]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create the unprivileged Redless primary group
+      ansible.builtin.group:
+        name: "{{ redless_group }}"
+        system: false
+        state: present
+
+    - name: Create the unprivileged Redless account with a normal home and shell
+      ansible.builtin.user:
+        name: "{{ redless_user }}"
+        group: "{{ redless_group }}"
+        groups: "{{ redless_group }}"
+        append: true
+        home: "{{ redless_home }}"
+        create_home: true
+        shell: /bin/bash
+        system: false
+        state: present
+
+    - name: Add only explicitly configured primary Aggregare users to Redless
+      ansible.builtin.user:
+        name: "{{ item }}"
+        groups: "{{ redless_group }}"
+        append: true
+      loop: "{{ aggregare_primary_users }}"
+
+    - name: Create Redless persistent directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default(redless_user) }}"
+        group: "{{ item.group | default(redless_group) }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - {path: "{{ redless_home }}", mode: '0750'}
+        - {path: "{{ redless_workspace_path }}", mode: '2770'}
+        - {path: "{{ redless_run_path }}", mode: '2770'}
+        - {path: "{{ redless_log_path }}", mode: '2770'}
+        - {path: "{{ redless_config_path }}", owner: root, group: root, mode: '0755'}
+
+    - name: Grant configured human users access to new Redless artifacts
+      ansible.builtin.command:
+        argv: [setfacl, -m, "g:{{ redless_group }}:rwx", "{{ item }}"]
+      loop: ["{{ redless_workspace_path }}", "{{ redless_run_path }}", "{{ redless_log_path }}"]
+      changed_when: false
+
+    - name: Set default group access for Redless-created artifacts
+      ansible.builtin.command:
+        argv: [setfacl, -m, "d:g:{{ redless_group }}:rwx,d:u::rwx,d:g::rwx,d:o::---", "{{ item }}"]
+      loop: ["{{ redless_workspace_path }}", "{{ redless_run_path }}", "{{ redless_log_path }}"]
+      changed_when: false
+
+    - name: Install Redless from its pinned compatible revision
+      ansible.builtin.include_role:
+        name: python_app
+      vars:
+        python_app_id: redless
+        python_app_version: "{{ redless_version }}"
+        python_app_source: "{{ redless_source }}"
+        python_app_ref: "{{ redless_ref }}"
+        python_app_module: minisweagent
+        python_app_service_enabled: false
+
+    - name: Install the persistent Redless coding-model profile
+      ansible.builtin.copy:
+        dest: "{{ redless_config_path }}/slow_local.yaml"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          agent:
+            agent_class: default
+            system_template: |
+              You are a coding agent working in the supplied workspace. Complete the user's bounded task and report the result clearly.
+            instance_template: |
+              {{ '{{task}}' }}
+            step_limit: 0
+            cost_limit: 0
+            wall_time_limit_seconds: 0
+          environment:
+            environment_class: local
+            timeout: 600
+          model:
+            model_class: llama_cpp
+            max_retries: 0
+            model_kwargs:
+              api_base: {{ redless_coding_base_url | regex_replace('/+$', '') | to_json }}
+              api_key: llama.cpp-placeholder
+            model_name: {{ redless_coding_model | to_json }}
+
+    - name: Remove a legacy Redless executable link before installing the wrapper
+      ansible.builtin.file:
+        path: /usr/local/bin/redless-machine
+        state: absent
+
+    - name: Expose the machine-callable Redless JSONL executable with its protected profile
+      ansible.builtin.copy:
+        dest: /usr/local/bin/redless-machine
+        owner: root
+        group: root
+        mode: '0755'
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          export MSWEA_CONFIG_DIR={{ redless_config_path | quote }}
+          exec /opt/aggregare/venvs/redless/bin/redless-machine "$@"
+
+    - name: Verify the installed Redless machine contract as the unprivileged worker
+      ansible.builtin.command:
+        argv: [runuser, --user, "{{ redless_user }}", --, /usr/local/bin/redless-machine]
+        stdin: "{\"type\":\"capabilities\"}\n"
+      register: redless_capabilities
+      changed_when: false
+      failed_when: >-
+        redless_capabilities.rc != 0 or
+        ('"type":"capabilities"' not in redless_capabilities.stdout) or
+        ('"task_execution"' not in redless_capabilities.stdout)
+
+    - name: Write Redless deployment status
+      ansible.builtin.copy:
+        dest: /var/lib/aggregare/status/redless.json
+        owner: root
+        group: root
+        mode: '0644'
+        content: >-
+          {{ {'schema_version': 'v1', 'application_id': 'redless', 'state': 'installed',
+             'version': redless_version, 'deployment': {'backend': 'ansible', 'method': 'native-python',
+             'account': redless_user, 'workspace': redless_workspace_path, 'runs': redless_run_path,
+             'logs': redless_log_path}, 'verification': {'status': 'passed',
+             'check': 'redless-machine capabilities as ' ~ redless_user}} | to_nice_json }}

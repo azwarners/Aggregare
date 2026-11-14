@@ -107,7 +107,6 @@ fail() {
 install_state_get() {
   sudo python3 - "$INSTALL_STATE_FILE" "$1" <<'PY'
 import json
-import os
 import sys
 
 path, key = sys.argv[1:]
@@ -267,6 +266,7 @@ select_llama_cpp_endpoint() {
   if sudo test -r "$config_file"; then
     saved_url="$(sudo python3 - "$config_file" <<'PY'
 import json
+import os
 import sys
 
 try:
@@ -595,6 +595,7 @@ fi
 
 BOOTSTRAP_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" "$LLAMA_CPP_URL" "$CHAT_MODEL" "$CODING_LLM_URL" "$CODING_MODEL" "$ROTATE_SIDECARAVAN_TOKEN" <<'PY'
 import json
+import os
 import sys
 
 print(json.dumps({
@@ -609,6 +610,7 @@ print(json.dumps({
     "ysparr_chat_model": sys.argv[4],
     "ysparr_coding_base_url": sys.argv[5],
     "ysparr_coding_model": sys.argv[6],
+    "aggregare_primary_users": [os.environ.get("SUDO_USER") or os.environ.get("USER") or "root"],
     "sidecaravan_rotate_token": sys.argv[7] == "true",
     "ansible_become": False,
 }))
