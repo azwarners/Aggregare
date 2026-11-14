@@ -69,6 +69,21 @@ class DeploymentReportTests(unittest.TestCase):
         content = self.render()
         self.assertIn(f"CLI: `enabled-cli` at `{sys.executable}` (installed) — Test CLI", content)
 
+    def test_report_lists_worker_account_and_persistent_paths_without_credentials(self):
+        self.statuses.joinpath("enabled.json").write_text(json.dumps({
+            "application_id": "enabled", "state": "running",
+            "deployment": {
+                "account": "worker", "workspace": "/var/lib/worker/workspaces",
+                "runs": "/var/lib/worker/runs", "logs": "/var/log/worker",
+            },
+        }))
+        content = self.render()
+        self.assertIn("Operating account: `worker`", content)
+        self.assertIn("Workspace path: `/var/lib/worker/workspaces`", content)
+        self.assertIn("Run artifacts: `/var/lib/worker/runs`", content)
+        self.assertIn("Log path: `/var/log/worker`", content)
+        self.assertNotIn("password", content.lower())
+
     def test_report_redacts_credentials_and_credential_bearing_urls(self):
         content = self.render()
         for secret in ("token=secret", "never-render-this", "admin:"):

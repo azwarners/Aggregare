@@ -8,10 +8,15 @@ The report begins with a `Configured application inventory` section that lists
 the catalog applications selected for the deployment, including standalone
 components such as Memkeeper. Each installed application section also lists its catalog-declared CLI commands
 and whether their expected paths are present. The default report includes the
-`apmatia`, `scv`, and `memkeeper` commands, plus the `aggregare` report and
+`apmatia`, `scv`, `memkeeper`, and `redless-machine` commands, plus the `aggregare` report and
 summary commands. It also lists OpenIPE, Sidecaravan's MCP socket, and
 Ladcemas-Lite systemd units when they are installed. OpenIPE does not yet ship
 an `openipe` CLI.
+
+The Redless section identifies `redless-machine` as the JSONL task interface,
+the unprivileged `redless` operating account, and its workspace, run-artifact,
+and log paths. Redless is a worker account rather than a human login, so no
+password or SSH credential is generated or displayed.
 
 The HabitSync section includes the password-change command. From your home directory, run `cd ~/Aggregare && ./tools/aggregare-habitsync-password`; it prompts twice without echoing the password, applies the new login while preserving the installer's saved LAN access and base URL, removes the superseded initial login handoff, and refreshes this report without recording the new password.
 

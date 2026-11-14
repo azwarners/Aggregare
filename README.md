@@ -2,7 +2,7 @@
 
 ## Implemented features and boundaries
 
-**Available today:** Ubuntu Server/Ansible-oriented installation scaffolding; a default bundle with Open WebUI, Ysparr, Apmatia, Memos, HabitSync, Vikunja, OpenIPE, Sidecaravan shared team memory, and Ladcemas-Lite; published Apmatia starter-agent discovery through Ysparr; documented application and composition contracts; a selectable identity provider (`kanidm`, `external_oidc`, or `none`), with pinned Kanidm service deployment and persisted endpoint settings; identity requirement inspection via `./tools/aggregare-auth`; and tests covering configuration and contracts.
+**Available today:** Ubuntu Server/Ansible-oriented installation scaffolding; a default bundle with Open WebUI, Ysparr, Apmatia, Redless, Memos, HabitSync, Vikunja, OpenIPE, Sidecaravan shared team memory, and Ladcemas-Lite; published Apmatia starter-agent discovery through Ysparr; documented application and composition contracts; a selectable identity provider (`kanidm`, `external_oidc`, or `none`), with pinned Kanidm service deployment and persisted endpoint settings; identity requirement inspection via `./tools/aggregare-auth`; and tests covering configuration and contracts.
 
 **Administrator supplied:** DNS records, trusted TLS certificates and private keys, and any reverse-proxy/router/firewall configuration needed to reach the selected Kanidm endpoint. Selecting `external_oidc` records the provider choice without installing an external provider. Application OIDC clients and the guided Phase 3 client remain future work.
 
@@ -11,6 +11,25 @@ For a current checkout, review [the Ubuntu Server deployment guide](docs/deploym
 After installation, read the persistent deployment report from any directory with `aggregare report`. The authoritative Markdown report is `/var/lib/aggregare/deployment-report.md`; interactive installs also create `~/Aggregare-Report.md` when available. See the [deployment report guide](docs/deployment/deployment-report.md).
 
 Change the HabitSync local password from your home directory with `cd ~/Aggregare && ./tools/aggregare-habitsync-password`. It prompts without echoing the password, preserves the installer's LAN setting, updates the service, removes the superseded initial login handoff, and refreshes the deployment report without the new password.
+
+### Run a Redless task
+
+Redless is the bounded coding/task execution component. Aggregare installs its
+machine-callable JSONL interface as `redless-machine` at
+`/usr/local/bin/redless-machine`. The root-owned launcher automatically drops
+privileges to the unprivileged `redless` account before starting the worker, so
+primary users do not need—and are not given—a Redless password.
+
+For example, send a capabilities request directly through the installed command:
+
+```sh
+printf '%s\n' '{"type":"capabilities"}' | redless-machine
+```
+
+The command emits JSONL status and result records on standard output. Workspaces,
+run artifacts, and logs are persistent under `/var/lib/redless/` and
+`/var/log/redless/`; the deployment report lists the exact paths and operating
+account. See the [Redless deployment details](docs/deployment/aggregare-server.md#redless).
 
 
 Aggregare composes independently useful applications and infrastructure tools into one coherent platform.

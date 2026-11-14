@@ -3,8 +3,11 @@ aggregare_report_path: /var/lib/aggregare/deployment-report.md
 aggregare_report_status_dir: /var/lib/aggregare/status
 aggregare_report_catalog_path: /usr/local/share/aggregare/catalog/v1
 aggregare_report_admin_home: ""
-aggregare_report_admin_uid: "0"
-aggregare_report_admin_gid: "0"
+# The installer supplies these explicitly. Direct report-playbook users fall
+# back to the Ansible connection account rather than silently making root the
+# report owner.
+aggregare_report_admin_uid: ""
+aggregare_report_admin_gid: ""
 aggregare_report_bind_address: ""
 aggregare_report_failed_applications: []
 aggregare_report_expected_applications: []

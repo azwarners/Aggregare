@@ -46,7 +46,7 @@
   block:
     - name: Install Redless filesystem ACL and Python prerequisites
       ansible.builtin.apt:
-        name: [acl, git, python3, python3-venv, python3-pip]
+        name: [acl, gcc, git, python3, python3-venv, python3-pip]
         state: present
         update_cache: true
         cache_valid_time: 3600
@@ -145,21 +145,35 @@
         path: /usr/local/bin/redless-machine
         state: absent
 
-    - name: Expose the machine-callable Redless JSONL executable with its protected profile
+    - name: Install the fixed Redless privilege-dropping launcher source
       ansible.builtin.copy:
-        dest: /usr/local/bin/redless-machine
+        src: redless-machine-launcher.c
+        dest: /usr/local/lib/aggregare/redless-machine-launcher.c
         owner: root
         group: root
-        mode: '0755'
-        content: |
-          #!/usr/bin/env bash
-          set -euo pipefail
-          export MSWEA_CONFIG_DIR={{ redless_config_path | quote }}
-          exec /opt/aggregare/venvs/redless/bin/redless-machine "$@"
+        mode: '0644'
+
+    - name: Build the fixed Redless privilege-dropping launcher
+      ansible.builtin.command:
+        argv:
+          - gcc
+          - -O2
+          - -Wall
+          - -Wextra
+          - -o
+          - /usr/local/bin/redless-machine
+          - /usr/local/lib/aggregare/redless-machine-launcher.c
+
+    - name: Make the Redless launcher root-owned and non-group-writable
+      ansible.builtin.file:
+        path: /usr/local/bin/redless-machine
+        owner: root
+        group: root
+        mode: '4755'
 
     - name: Verify the installed Redless machine contract as the unprivileged worker
       ansible.builtin.command:
-        argv: [runuser, --user, "{{ redless_user }}", --, /usr/local/bin/redless-machine]
+        argv: [/usr/local/bin/redless-machine]
         stdin: "{\"type\":\"capabilities\"}\n"
       register: redless_capabilities
       changed_when: false

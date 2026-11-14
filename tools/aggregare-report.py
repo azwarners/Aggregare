@@ -203,6 +203,15 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
             suffix = f" — {description}" if isinstance(description, str) and description else ""
             state = "installed" if installed else "not detected"
             lines.append(f"- CLI: `{cli_name}` at `{cli_path}` ({state}){suffix}")
+        deployment = status.get("deployment", {}) if isinstance(status, dict) else {}
+        if isinstance(deployment, dict):
+            account = deployment.get("account")
+            if isinstance(account, str) and account:
+                lines.append(f"- Operating account: `{account}` (unprivileged worker; no human login credentials generated)")
+            for label, key in (("Workspace path", "workspace"), ("Run artifacts", "runs"), ("Log path", "logs")):
+                path = deployment.get(key)
+                if isinstance(path, str) and path:
+                    lines.append(f"- {label}: `{path}`")
         auth = entry.get("authentication", {})
         bootstrap = auth.get("bootstrap", {}) if isinstance(auth, dict) else {}
         if isinstance(bootstrap, dict):

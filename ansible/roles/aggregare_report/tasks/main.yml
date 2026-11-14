@@ -1,4 +1,8 @@
 ---
+- name: Resolve the report administrator from explicit settings or the connection user
+  ansible.builtin.set_fact:
+    aggregare_report_admin_home_effective: "{{ aggregare_report_admin_home | default(ansible_user_dir | default(''), true) }}"
+
 - name: Ensure the Aggregare report directory is readable
   ansible.builtin.file:
     path: /var/lib/aggregare
@@ -11,8 +15,8 @@
   ansible.builtin.copy:
     content: "# Aggregare deployment report refresh in progress\n\nThis file is not a current report. Rerun the installer or reporting playbook to complete report generation.\n"
     dest: "{{ aggregare_report_path }}"
-    owner: "{{ aggregare_report_admin_uid }}"
-    group: "{{ aggregare_report_admin_gid }}"
+    owner: "{{ aggregare_report_admin_uid | default(ansible_user_uid | default(0), true) }}"
+    group: "{{ aggregare_report_admin_gid | default(ansible_user_gid | default(0), true) }}"
     mode: '0600'
 
 - name: Create report tool and catalog parent directories
@@ -128,33 +132,33 @@
   ansible.builtin.file:
     path: "{{ aggregare_report_path }}"
     state: file
-    owner: "{{ aggregare_report_admin_uid }}"
-    group: "{{ aggregare_report_admin_gid }}"
+    owner: "{{ aggregare_report_admin_uid | default(ansible_user_uid | default(0), true) }}"
+    group: "{{ aggregare_report_admin_gid | default(ansible_user_gid | default(0), true) }}"
     mode: '0600'
 
 - name: Inspect the administrator report shortcut
   ansible.builtin.stat:
-    path: "{{ aggregare_report_admin_home }}/Aggregare-Report.md"
+    path: "{{ aggregare_report_admin_home_effective }}/Aggregare-Report.md"
     follow: false
   register: aggregare_report_shortcut
-  when: aggregare_report_admin_home | length > 0
+  when: aggregare_report_admin_home_effective | length > 0
 
 - name: Create the administrator report shortcut when the path is unused or already correct
   ansible.builtin.file:
     src: "{{ aggregare_report_path }}"
-    dest: "{{ aggregare_report_admin_home }}/Aggregare-Report.md"
+    dest: "{{ aggregare_report_admin_home_effective }}/Aggregare-Report.md"
     state: link
-    owner: "{{ aggregare_report_admin_uid }}"
-    group: "{{ aggregare_report_admin_gid }}"
+    owner: "{{ aggregare_report_admin_uid | default(ansible_user_uid | default(0), true) }}"
+    group: "{{ aggregare_report_admin_gid | default(ansible_user_gid | default(0), true) }}"
     force: false
   when:
-    - aggregare_report_admin_home | length > 0
+    - aggregare_report_admin_home_effective | length > 0
     - not aggregare_report_shortcut.stat.exists | default(false) or (aggregare_report_shortcut.stat.islnk | default(false) and aggregare_report_shortcut.stat.lnk_source | default('') == aggregare_report_path)
 
 - name: Explain when an existing home path prevented creation of the report shortcut
   ansible.builtin.debug:
-    msg: "{{ aggregare_report_admin_home }}/Aggregare-Report.md already exists and was left untouched. Read the report with: aggregare report"
+    msg: "{{ aggregare_report_admin_home_effective }}/Aggregare-Report.md already exists and was left untouched. Read the report with: aggregare report"
   when:
-    - aggregare_report_admin_home | length > 0
+    - aggregare_report_admin_home_effective | length > 0
     - aggregare_report_shortcut.stat.exists | default(false)
     - not (aggregare_report_shortcut.stat.islnk | default(false) and aggregare_report_shortcut.stat.lnk_source | default('') == aggregare_report_path)

@@ -25,7 +25,12 @@ def test_redless_role_enforces_account_and_filesystem_isolation():
     assert "mode: '0644'" in tasks
     assert "mode: '0755'" in tasks
     assert "api_key: llama.cpp-placeholder" in tasks
-    assert "runuser, --user, \"{{ redless_user }}\"" in tasks
+    assert "gcc" in tasks
+    assert "mode: '4755'" in tasks
+    launcher = (ROOT / "ansible/roles/redless/files/redless-machine-launcher.c").read_text()
+    assert "initgroups" in launcher
+    assert "setuid(account->pw_uid)" in launcher
+    assert "clearenv" in launcher
 
 
 def test_redless_uses_the_machine_contract_and_report_exposes_it():
@@ -35,3 +40,10 @@ def test_redless_uses_the_machine_contract_and_report_exposes_it():
     assert '"type":"capabilities"' in tasks
     assert '"task_execution"' in tasks
     assert "redless-machine" in report
+
+
+def test_redless_catalog_declares_cli_and_no_human_credentials():
+    entry = json.loads((ROOT / "catalog/v1/applications/redless.json").read_text())
+    assert entry["cli"][0]["path"] == "/usr/local/bin/redless-machine"
+    assert entry["authentication"]["bootstrap"]["mode"] == "none"
+    assert "password" not in entry["configuration"]

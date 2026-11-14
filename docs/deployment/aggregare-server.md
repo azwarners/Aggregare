@@ -158,6 +158,27 @@ The service status should say `active`; the status record should report a
 passed verification. If you chose LAN access, use the LAN address printed by
 the installer instead of `127.0.0.1` in the `curl` command.
 
+### Redless
+
+Redless is installed as an unprivileged bounded-task worker. Aggregare creates
+the standard Linux account `redless` with its home at `/var/lib/redless`, but it
+does not create a human login password or grant the account sudo, Docker, or
+other administrative access.
+
+Use the installed command directly as a configured primary Aggregare user:
+
+```sh
+printf '%s\n' '{"type":"capabilities"}' | redless-machine
+```
+
+`redless-machine` is a root-owned launcher at `/usr/local/bin/redless-machine`.
+It automatically drops to the `redless` UID/GID before executing Redless, sets
+the persistent profile from `/etc/redless/`, and preserves the JSONL contract.
+Callers do not switch users and do not need a Redless password. Task workspaces,
+run artifacts, and logs are stored in `/var/lib/redless/workspaces`,
+`/var/lib/redless/runs`, and `/var/log/redless`; configured primary users receive
+group-based access to those paths only.
+
 Sidecaravan exposes its local MCP boundary through the administrator-protected
 `sidecaravan-mcp.socket` Unix socket and provides the `scv` and `memkeeper`
 commands. OpenIPE runs its REST API as `openipe.service` on loopback port 8002.
