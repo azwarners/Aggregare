@@ -29,6 +29,11 @@ def test_redless_role_enforces_account_and_filesystem_isolation():
     assert "mode: '0710'" in tasks
     assert "api_key: llama.cpp-placeholder" in tasks
     assert "redless_purge_data" in tasks
+    assert "follow: false" in tasks
+    assert "legacy setuid Redless regular executable" in tasks
+    assert "redless_coding_models_probe" in tasks
+    assert "does not substitute the chat model" in tasks
+    assert "Restore ownership of preserved Redless artifacts" in tasks
     assert "mode: '4755'" not in tasks
     assert "redless-machine, --fixture" in tasks
     assert "/opt/aggregare/venvs/redless/bin/redless-machine" in tasks
@@ -40,6 +45,9 @@ def test_redless_uses_the_machine_contract_and_report_exposes_it():
     assert "/opt/aggregare/venvs/redless/bin/redless-machine" in tasks
     assert '"type":"task"' in tasks
     assert "redless_fixture_records" in tasks
+    assert "redless_live_records" in tasks
+    assert "trajectory_path" in tasks
+    assert "max_retries: 0" in tasks
     assert "redless-machine" in report
 
 

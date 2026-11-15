@@ -49,6 +49,104 @@
 - name: Install and configure Redless
   when: redless_state == 'present'
   block:
+    - name: Inspect the legacy Redless launcher without following links
+      ansible.builtin.stat:
+        path: /usr/local/bin/redless-machine
+        follow: false
+      register: redless_legacy_launcher
+
+    - name: Remove a legacy setuid Redless regular executable during upgrade
+      ansible.builtin.file:
+        path: /usr/local/bin/redless-machine
+        state: absent
+      when:
+        - redless_legacy_launcher.stat.isreg | default(false)
+        - (redless_legacy_launcher.stat.mode | default('')) is match('^4[0-7]{3}$')
+
+    - name: Check for the persisted Ysparr coding target
+      ansible.builtin.stat:
+        path: "{{ redless_upstream_config_path }}"
+      register: redless_upstream_config_file
+
+    - name: Read the persisted Ysparr coding target
+      ansible.builtin.slurp:
+        src: "{{ redless_upstream_config_path }}"
+      register: redless_saved_upstream_config_raw
+      when: redless_upstream_config_file.stat.exists
+      no_log: true
+
+    - name: Decode the persisted Ysparr coding target
+      ansible.builtin.set_fact:
+        redless_saved_upstream_config: >-
+          {{ (redless_saved_upstream_config_raw.content | b64decode | from_json)
+             if redless_upstream_config_file.stat.exists else {} }}
+      no_log: true
+
+    - name: Resolve the explicit Redless coding target
+      ansible.builtin.set_fact:
+        redless_coding_base_url_effective: >-
+          {{ redless_coding_base_url | default('', true) | trim
+             or redless_saved_upstream_config.ysparr_coding_base_url | default('') | trim }}
+        redless_coding_model_effective: >-
+          {{ redless_coding_model | default('', true) | trim
+             or redless_saved_upstream_config.ysparr_coding_model | default('') | trim }}
+      no_log: true
+
+    - name: Normalize and validate the Redless coding target
+      ansible.builtin.set_fact:
+        redless_coding_base_url_effective: >-
+          {{ redless_coding_base_url_effective if '://' in redless_coding_base_url_effective
+             else ('http://' ~ redless_coding_base_url_effective if redless_coding_base_url_effective else '') }}
+      no_log: true
+
+    - name: Build the direct OpenAI-compatible API base for Redless
+      ansible.builtin.set_fact:
+        redless_coding_api_base: >-
+          {{ (redless_coding_base_url_effective | regex_replace('/v1/?$', '') | regex_replace('/+$', '')) ~ '/v1' }}
+      no_log: true
+
+    - name: Require a real explicit coding endpoint and model
+      ansible.builtin.assert:
+        that:
+          - redless_coding_model_effective | length > 0
+          - redless_coding_model_effective is match('^\\S+$')
+          - redless_coding_base_url_effective | urlsplit('scheme') in ['http', 'https']
+          - redless_coding_base_url_effective | urlsplit('hostname') | length > 0
+          - redless_coding_base_url_effective | urlsplit('path') in ['', '/', '/v1', '/v1/']
+          - redless_coding_base_url_effective | urlsplit('username') | default('', true) | length == 0
+          - redless_coding_base_url_effective | urlsplit('password') | default('', true) | length == 0
+          - redless_coding_base_url_effective | urlsplit('query') | default('', true) | length == 0
+          - redless_coding_base_url_effective | urlsplit('fragment') | default('', true) | length == 0
+        fail_msg: >-
+          Redless requires the configured coding endpoint and model from
+          ysparr_coding_base_url and ysparr_coding_model (or the saved
+          /etc/aggregare/ysparr-upstream.json). It never falls back to chat or
+          to a guessed local endpoint.
+
+    - name: Check the configured Redless coding model endpoint
+      ansible.builtin.uri:
+        url: "{{ redless_coding_api_base }}/models"
+        method: GET
+        status_code: [200, 401, 403, 404]
+        return_content: true
+        timeout: 8
+        validate_certs: true
+      register: redless_coding_models_probe
+      failed_when: false
+      no_log: true
+
+    - name: Require the configured Redless model at the coding endpoint
+      ansible.builtin.assert:
+        that:
+          - redless_coding_models_probe.status | default(0) | int == 200
+          - (redless_coding_models_probe.json | default({})).data | default([]) is sequence
+          - (redless_coding_models_probe.json | default({})).data | default([]) is not string
+          - redless_coding_model_effective in ((redless_coding_models_probe.json | default({})).data | default([]) | map(attribute='id') | list)
+        fail_msg: >-
+          The configured Redless coding endpoint is reachable only when its
+          /v1/models response contains the configured coding model. Redless
+          does not substitute the chat model or retry another endpoint.
+
     - name: Install Redless filesystem ACL and Python prerequisites
       ansible.builtin.apt:
         name: [acl, git, python3, python3-venv, python3-pip]
@@ -101,6 +199,17 @@
         - {path: "{{ redless_log_path }}", group: root, mode: '2750'}
         - {path: "{{ redless_config_path }}", mode: '0700'}
 
+    - name: Restore ownership of preserved Redless artifacts after reinstall
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: "{{ redless_user }}"
+        group: root
+        recurse: true
+      loop:
+        - "{{ redless_workspace_path }}"
+        - "{{ redless_run_path }}"
+        - "{{ redless_log_path }}"
+
     - name: Grant configured human users access to new Redless artifacts
       ansible.builtin.command:
         argv: [setfacl, -m, "g:{{ redless_group }}:r-x,m::r-x", "{{ item }}"]
@@ -137,19 +246,22 @@
               You are a coding agent working in the supplied workspace. Complete the user's bounded task and report the result clearly.
             instance_template: |
               {{ '{{task}}' }}
-            step_limit: 0
+            step_limit: 1
             cost_limit: 0
-            wall_time_limit_seconds: 0
+            wall_time_limit_seconds: {{ redless_live_smoke_timeout }}
           environment:
             environment_class: local
-            timeout: 600
+            timeout: {{ redless_live_model_timeout }}
           model:
             model_class: llama_cpp
+            cost_tracking: disabled
+            connect_timeout_seconds: 30
+            model_timeout_seconds: {{ redless_live_model_timeout }}
             max_retries: 0
             model_kwargs:
-              api_base: {{ redless_coding_base_url | regex_replace('/+$', '') | to_json }}
+              api_base: {{ redless_coding_api_base | to_json }}
               api_key: llama.cpp-placeholder
-            model_name: {{ redless_coding_model | to_json }}
+            model_name: {{ redless_coding_model_effective | to_json }}
 
     - name: Ensure the Redless package entry points are root-owned and non-writable by the worker
       ansible.builtin.file:
@@ -220,6 +332,89 @@
         redless_malformed.rc != 0 or
         (redless_malformed.stdout_lines | map('from_json') | list | first).type != 'error'
 
+    - name: Create a unique bounded live Redless smoke workspace
+      ansible.builtin.set_fact:
+        redless_live_run_id: "aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}"
+        redless_live_workspace: "{{ redless_workspace_path }}/aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}"
+        redless_live_result: "{{ redless_run_path }}/aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}.json"
+        redless_live_trajectory: "{{ redless_run_path }}/aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}.traj.json"
+        redless_live_stdout: "{{ redless_log_path }}/aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}.stdout.jsonl"
+        redless_live_stderr: "{{ redless_log_path }}/aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}.stderr.log"
+      when: redless_live_smoke | bool
+
+    - name: Create the live smoke workspace
+      ansible.builtin.file:
+        path: "{{ redless_live_workspace }}"
+        state: directory
+        owner: "{{ redless_user }}"
+        group: "{{ redless_group }}"
+        mode: '0700'
+      when: redless_live_smoke | bool
+
+    - name: Submit exactly one bounded live Redless JSONL task
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        printf '%s\n' {{ {
+          'type': 'task',
+          'payload': {
+            'contract_version': '1',
+            'run_id': redless_live_run_id,
+            'correlation_id': redless_live_run_id,
+            'task': 'Return Hello from Redless and the current UTC timestamp, then stop.',
+            'workspace': {'contract_version': '1', 'mode': 'existing', 'path': redless_live_workspace},
+            'model': {'profile': 'slow_local.yaml', 'model_name': redless_coding_model_effective, 'endpoint_url': redless_coding_api_base},
+            'destinations': {'result_path': redless_live_result, 'trajectory_path': redless_live_trajectory}
+          }
+        } | to_json | quote }} |
+        /usr/bin/timeout --signal=TERM {{ redless_live_smoke_timeout }}
+        /opt/aggregare/venvs/redless/bin/redless-machine
+        >{{ redless_live_stdout }} 2>{{ redless_live_stderr }}
+      args:
+        executable: /bin/bash
+      become_user: "{{ redless_user }}"
+      environment:
+        HOME: "{{ redless_home }}"
+        MSWEA_CONFIG_DIR: "{{ redless_config_path }}"
+      register: redless_live
+      changed_when: false
+      when: redless_live_smoke | bool
+
+    - name: Inspect live Redless smoke artifacts
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ redless_live_stdout }}"
+        - "{{ redless_live_stderr }}"
+        - "{{ redless_live_trajectory }}"
+        - "{{ redless_live_result }}"
+      register: redless_live_artifacts
+      when: redless_live_smoke | bool
+
+    - name: Read the live Redless stdout JSONL
+      ansible.builtin.slurp:
+        src: "{{ redless_live_stdout }}"
+      register: redless_live_stdout_raw
+      when: redless_live_smoke | bool
+
+    - name: Parse the live Redless terminal records
+      ansible.builtin.set_fact:
+        redless_live_records: "{{ (redless_live_stdout_raw.content | b64decode).splitlines() | map('from_json') | list }}"
+      when: redless_live_smoke | bool
+
+    - name: Verify the live Redless task and saved trajectory
+      ansible.builtin.assert:
+        that:
+          - redless_live.rc == 0
+          - redless_live_records | selectattr('type', 'equalto', 'result') | list | length == 1
+          - (redless_live_records | selectattr('type', 'equalto', 'result') | list | first).payload.state == 'succeeded'
+          - (redless_live_artifacts.results | selectattr('item', 'equalto', redless_live_trajectory) | map(attribute='stat.exists') | first) | bool
+          - (redless_live_artifacts.results | selectattr('item', 'equalto', redless_live_stdout) | map(attribute='stat.exists') | first) | bool
+          - (redless_live_artifacts.results | selectattr('item', 'equalto', redless_live_stderr) | map(attribute='stat.exists') | first) | bool
+        fail_msg: >-
+          The bounded Redless live smoke task did not produce a succeeded terminal
+          result and saved trajectory. Inspect the separate stdout/stderr paths.
+      when: redless_live_smoke | bool
+
     - name: Write Redless deployment status
       ansible.builtin.copy:
         dest: /var/lib/aggregare/status/redless.json
@@ -231,4 +426,7 @@
              'version': redless_version, 'deployment': {'backend': 'ansible', 'method': 'native-python',
              'account': redless_user, 'workspace': redless_workspace_path, 'runs': redless_run_path,
              'logs': redless_log_path}, 'verification': {'status': 'passed',
-             'check': 'redless-machine help and deterministic fixture as ' ~ redless_user}} | to_nice_json }}
+             'check': 'redless-machine help, fixture, and one bounded live task as ' ~ redless_user,
+             'coding_endpoint': redless_coding_base_url_effective,
+             'coding_model': redless_coding_model_effective,
+             'live_run': redless_live_run_id | default('not-run')}} | to_nice_json }}
