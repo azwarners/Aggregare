@@ -16,7 +16,10 @@ an `openipe` CLI.
 The Redless section identifies `redless-machine` as the JSONL task interface,
 the unprivileged `redless` operating account, and its workspace, run-artifact,
 and log paths. Redless is a worker account rather than a human login, so no
-password or SSH credential is generated or displayed.
+password or SSH credential is generated or displayed. It also records separate
+package/fixture and live-model verification states. Live inference is not part
+of a normal install or reapply; an administrator can explicitly opt in with
+`ansible-playbook -i inventory.ini playbooks/redless.yml -e redless_live_smoke=true`.
 
 The HabitSync section includes the password-change command. From your home directory, run `cd ~/Aggregare && ./tools/aggregare-habitsync-password`; it prompts twice without echoing the password, applies the new login while preserving the installer's saved LAN access and base URL, removes the superseded initial login handoff, and refreshes this report without recording the new password.
 

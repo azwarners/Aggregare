@@ -135,17 +135,13 @@
       failed_when: false
       no_log: true
 
-    - name: Require the configured Redless model at the coding endpoint
-      ansible.builtin.assert:
-        that:
-          - redless_coding_models_probe.status | default(0) | int == 200
-          - (redless_coding_models_probe.json | default({})).data | default([]) is sequence
-          - (redless_coding_models_probe.json | default({})).data | default([]) is not string
-          - redless_coding_model_effective in ((redless_coding_models_probe.json | default({})).data | default([]) | map(attribute='id') | list)
-        fail_msg: >-
-          The configured Redless coding endpoint is reachable only when its
-          /v1/models response contains the configured coding model. Redless
-          does not substitute the chat model or retry another endpoint.
+    - name: Record Redless coding endpoint readiness without destroying a valid reapply
+      ansible.builtin.set_fact:
+        redless_coding_readiness: >-
+          {{ 'passed' if redless_coding_models_probe.status | default(0) | int == 200 and
+             redless_coding_model_effective in ((redless_coding_models_probe.json | default({})).data | default([]) | map(attribute='id') | list)
+             else 'unavailable' }}
+      # Redless does not substitute the chat model or retry another endpoint.
 
     - name: Install Redless filesystem ACL and Python prerequisites
       ansible.builtin.apt:
@@ -246,12 +242,42 @@
               You are a coding agent working in the supplied workspace. Complete the user's bounded task and report the result clearly.
             instance_template: |
               {{ '{{task}}' }}
+            step_limit: 0
+            cost_limit: 0
+            wall_time_limit_seconds: 0
+          environment:
+            environment_class: local
+            timeout: 600
+          model:
+            model_class: llama_cpp
+            cost_tracking: disabled
+            connect_timeout_seconds: 30
+            model_timeout_seconds: 0
+            max_retries: 0
+            model_kwargs:
+              api_base: {{ redless_coding_api_base | to_json }}
+              api_key: llama.cpp-placeholder
+            model_name: {{ redless_coding_model_effective | to_json }}
+
+    - name: Install the bounded Redless live-smoke profile
+      ansible.builtin.copy:
+        dest: "{{ redless_config_path }}/redless_smoke.yaml"
+        owner: "{{ redless_user }}"
+        group: "{{ redless_group }}"
+        mode: '0600'
+        content: |
+          agent:
+            agent_class: default
+            system_template: |
+              You are a coding agent working in the supplied workspace. Complete the user's bounded task and report the result clearly.
+            instance_template: |
+              {{ '{{task}}' }}
             step_limit: 1
             cost_limit: 0
             wall_time_limit_seconds: {{ redless_live_smoke_timeout }}
           environment:
             environment_class: local
-            timeout: {{ redless_live_model_timeout }}
+            timeout: {{ redless_live_smoke_timeout }}
           model:
             model_class: llama_cpp
             cost_tracking: disabled
@@ -318,6 +344,15 @@
           - (redless_fixture_records | selectattr('type', 'equalto', 'result') | list | first).payload.state == 'succeeded'
           - redless_fixture.stderr | trim == ''
 
+    - name: Record package and fixture verification
+      ansible.builtin.set_fact:
+        redless_fixture_verification: passed
+
+    - name: Mark live model smoke as not run unless explicitly requested
+      ansible.builtin.set_fact:
+        redless_live_verification: not_run
+      when: not redless_live_smoke | bool
+
     - name: Verify malformed machine input returns a structured JSONL error
       ansible.builtin.command:
         argv: [/opt/aggregare/venvs/redless/bin/redless-machine, --fixture]
@@ -362,7 +397,8 @@
             'correlation_id': redless_live_run_id,
             'task': 'Return Hello from Redless and the current UTC timestamp, then stop.',
             'workspace': {'contract_version': '1', 'mode': 'existing', 'path': redless_live_workspace},
-            'model': {'profile': 'slow_local.yaml', 'model_name': redless_coding_model_effective, 'endpoint_url': redless_coding_api_base},
+            'model': {'profile': 'redless_smoke.yaml', 'model_name': redless_coding_model_effective, 'endpoint_url': redless_coding_api_base},
+            'execution_policy': {'timeout_seconds': redless_live_smoke_timeout, 'wall_time_limit_seconds': redless_live_smoke_timeout},
             'destinations': {'result_path': redless_live_result, 'trajectory_path': redless_live_trajectory}
           }
         } | to_json | quote }} |
@@ -415,6 +451,11 @@
           result and saved trajectory. Inspect the separate stdout/stderr paths.
       when: redless_live_smoke | bool
 
+    - name: Record successful live model verification
+      ansible.builtin.set_fact:
+        redless_live_verification: passed
+      when: redless_live_smoke | bool
+
     - name: Write Redless deployment status
       ansible.builtin.copy:
         dest: /var/lib/aggregare/status/redless.json
@@ -424,9 +465,12 @@
         content: >-
           {{ {'schema_version': 'v1', 'application_id': 'redless', 'state': 'installed',
              'version': redless_version, 'deployment': {'backend': 'ansible', 'method': 'native-python',
-             'account': redless_user, 'workspace': redless_workspace_path, 'runs': redless_run_path,
-             'logs': redless_log_path}, 'verification': {'status': 'passed',
-             'check': 'redless-machine help, fixture, and one bounded live task as ' ~ redless_user,
+             'account': redless_user, 'group': redless_group, 'workspace': redless_workspace_path, 'runs': redless_run_path,
+             'logs': redless_log_path, 'coding_endpoint': redless_coding_base_url_effective,
+             'coding_model': redless_coding_model_effective}, 'verification': {'status': redless_fixture_verification,
+             'fixture': redless_fixture_verification, 'live_model': redless_live_verification,
+             'coding_readiness': redless_coding_readiness,
+             'check': 'redless-machine help and fixture as ' ~ redless_user,
              'coding_endpoint': redless_coding_base_url_effective,
              'coding_model': redless_coding_model_effective,
              'live_run': redless_live_run_id | default('not-run')}} | to_nice_json }}

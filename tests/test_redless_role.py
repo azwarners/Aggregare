@@ -11,6 +11,7 @@ def test_redless_is_a_pinned_default_bundle_component():
     assert "- redless" in playbook
     assert "redless" in preset["applications"]
     assert "16bb8dd2d68582a55394075dfb7fbf5bb2924385" in playbook
+    assert "redless_live_smoke: true" not in playbook
 
 
 def test_redless_role_enforces_account_and_filesystem_isolation():
@@ -49,6 +50,18 @@ def test_redless_uses_the_machine_contract_and_report_exposes_it():
     assert "trajectory_path" in tasks
     assert "max_retries: 0" in tasks
     assert "redless-machine" in report
+    assert "redless_live_verification" in tasks
+    assert "redless_fixture_verification" in tasks
+    assert "redless_smoke.yaml" in tasks
+    assert "execution_policy" in tasks
+    assert "step_limit: 0" in tasks
+    assert "model_timeout_seconds: 0" in tasks
+
+
+def test_redless_live_smoke_is_disabled_by_default():
+    defaults = (ROOT / "ansible/roles/redless/defaults/main.yml").read_text()
+    assert "redless_live_smoke: false" in defaults
+    assert "redless_live_model_timeout: 240" in defaults
 
 
 def test_redless_catalog_declares_cli_and_no_human_credentials():

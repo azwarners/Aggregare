@@ -130,6 +130,41 @@ class DeploymentReportTests(unittest.TestCase):
         self.assertIn("Example: Recorded state: running", result.stdout)
         self.assertIn("http://127.0.0.1:8080/", result.stdout)
 
+    def test_redless_report_contains_operator_instructions_and_separate_verification(self):
+        entry = {
+            "id": "redless", "display_name": "Redless", "services": [],
+            "cli": [
+                {"name": "redless", "path": "/opt/aggregare/venvs/redless/bin/redless"},
+                {"name": "redless-machine", "path": "/opt/aggregare/venvs/redless/bin/redless-machine"},
+            ],
+            "authentication": {"bootstrap": {"mode": "none", "notes": "No human credential."}},
+        }
+        (self.catalog / "index.json").write_text(json.dumps({"applications": [{"id": "redless", "path": "applications/redless.json"}]}))
+        (self.apps / "redless.json").write_text(json.dumps(entry))
+        (self.statuses / "redless.json").write_text(json.dumps({
+            "application_id": "redless", "state": "installed",
+            "deployment": {"account": "redless", "group": "redless", "workspace": "/srv/redless/workspaces", "runs": "/srv/redless/runs", "logs": "/srv/redless/logs", "coding_endpoint": "http://127.0.0.1:8080/v1", "coding_model": "coding-model"},
+            "verification": {"status": "passed", "fixture": "passed", "live_model": "not_run", "coding_readiness": "passed"},
+        }))
+        content = self.render()
+        for expected in (
+            "sudo -iu redless", "group: `redless`", "/opt/aggregare/venvs/redless/bin/redless",
+            "/opt/aggregare/venvs/redless/bin/redless-machine", "live model smoke `not_run`",
+            "redless-machine --help", "Machine mode accepts JSONL", "not a background daemon", "/srv/redless/logs",
+        ):
+            self.assertIn(expected, content)
+        self.assertNotIn("never-render-this", content)
+
+    def test_redless_absent_does_not_print_fake_commands_or_status(self):
+        redless = {"id": "redless", "display_name": "Redless", "services": [], "cli": [{"name": "redless-machine", "path": "/opt/aggregare/venvs/redless/bin/redless-machine"}]}
+        (self.catalog / "index.json").write_text(json.dumps({"applications": [{"id": "redless", "path": "applications/redless.json"}]}))
+        (self.apps / "redless.json").write_text(json.dumps(redless))
+        content = self.render(expected_apps={"redless"})
+        self.assertIn("Redless", content)
+        self.assertNotIn("sudo -iu redless", content)
+        self.assertNotIn("/opt/aggregare/venvs/redless/bin/redless-machine", content)
+        self.assertNotIn("live model smoke `passed`", content.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -181,8 +181,10 @@ run artifacts, and logs are stored in `/var/lib/redless/workspaces`,
 group-based access to those paths only.
 The profile uses the explicit Ysparr coding target directly at its OpenAI-compatible
 `/v1` endpoint; Ysparr is the configuration source, not an intermediary router.
-Reapply verifies that the configured model appears in that endpoint's `/v1/models`
-response and runs one bounded real task with no automatic model retry.
+Reapply records whether the configured model appears in that endpoint's `/v1/models`
+response but does not submit a model request. A live one-shot task is available
+only through the explicit `redless_live_smoke=true` opt-in and has separate
+bounded deadlines with no automatic model retry.
 
 Sidecaravan exposes its local MCP boundary through the administrator-protected
 `sidecaravan-mcp.socket` Unix socket and provides the `scv` and `memkeeper`
