@@ -60,6 +60,11 @@
       "name": "redless-machine",
       "path": "/opt/aggregare/venvs/redless/bin/redless-machine",
       "description": "Redless machine-callable JSONL task runner; workers execute as the unprivileged redless account."
+    },
+    {
+      "name": "redless",
+      "path": "/opt/aggregare/venvs/redless/bin/redless",
+      "description": "Redless human-facing CLI entry point; machine requests use redless-machine."
     }
   ],
   "configuration": [

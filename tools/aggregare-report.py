@@ -202,6 +202,8 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
             description = cli.get("description", "")
             suffix = f" — {description}" if isinstance(description, str) and description else ""
             state = "installed" if installed else "not detected"
+            if app_id == "redless" and not status and not has_unit:
+                continue
             lines.append(f"- CLI: `{cli_name}` at `{cli_path}` ({state}){suffix}")
         deployment = status.get("deployment", {}) if isinstance(status, dict) else {}
         if isinstance(deployment, dict):
@@ -212,6 +214,33 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
                 path = deployment.get(key)
                 if isinstance(path, str) and path:
                     lines.append(f"- {label}: `{path}`")
+        if app_id == "redless" and status and isinstance(deployment, dict) and deployment.get("account"):
+            redless_deployment = deployment if isinstance(deployment, dict) else {}
+            redless_user = redless_deployment.get("account", "redless")
+            redless_group = redless_deployment.get("group", redless_user)
+            lines.extend([
+                f"- Redless user: `{redless_user}`; primary group: `{redless_group}`",
+                "- Administrator shell: `sudo -iu {}`".format(redless_user),
+                "- From that shell, inspect the installed interface with `/opt/aggregare/venvs/redless/bin/redless-machine --help`, then return with `exit`.",
+                "- `sudo -iu {}` uses the administrator's own sudo authorization; the `{}` password is locked and no human Redless password or credential exists.".format(redless_user, redless_user),
+                "- Membership in the `{}` group grants read access to selected workspaces, run artifacts, and logs only; it does not allow becoming `{}` or reading the private model profile.".format(redless_group, redless_user),
+            ])
+            lines.append("- Redless executables: `/opt/aggregare/venvs/redless/bin/redless` and `/opt/aggregare/venvs/redless/bin/redless-machine`")
+            endpoint = safe_url(redless_deployment.get("coding_endpoint", ""))
+            model = redless_deployment.get("coding_model", "")
+            lines.append(f"- Coding model: `{model}` at `{endpoint or 'unknown or unavailable'}`")
+            verification = status.get("verification", {}) if isinstance(status, dict) else {}
+            if isinstance(verification, dict):
+                fixture = verification.get("fixture", verification.get("package_fixture", "unknown"))
+                live = verification.get("live_model", "not_run")
+                lines.append(f"- Verification: package/fixture `{fixture}`; live model smoke `{live}`")
+            workspace = redless_deployment.get("workspace", "")
+            runs = redless_deployment.get("runs", "")
+            logs = redless_deployment.get("logs", "")
+            if workspace and runs and logs:
+                lines.append(f"- Authorized inspection: `find {workspace} {runs} {logs} -maxdepth 2 -type f -print` (run as a primary user with allowed group access)")
+            lines.append("- Machine mode accepts JSONL on stdin and is a CLI, not a background daemon. Example: `printf '%s\\n' '{\"type\":\"capabilities\"}' | sudo -u redless -- /opt/aggregare/venvs/redless/bin/redless-machine`")
+            lines.append("- Live model smoke is operator opt-in: `ansible-playbook -i inventory.ini playbooks/redless.yml -e redless_live_smoke=true`; it runs one bounded task and does not retry.")
         auth = entry.get("authentication", {})
         bootstrap = auth.get("bootstrap", {}) if isinstance(auth, dict) else {}
         if isinstance(bootstrap, dict):
