@@ -14,22 +14,8 @@ Change the HabitSync local password from your home directory with `cd ~/Aggregar
 
 ### Run a Redless task
 
-Redless is the bounded coding/task execution component. Aggregare installs its
-machine-callable JSONL interface as `redless-machine` at
-`/usr/local/bin/redless-machine`. The root-owned launcher automatically drops
-privileges to the unprivileged `redless` account before starting the worker, so
-primary users do not need—and are not given—a Redless password.
-
-For example, send a capabilities request directly through the installed command:
-
-```sh
-printf '%s\n' '{"type":"capabilities"}' | redless-machine
-```
-
-The command emits JSONL status and result records on standard output. Workspaces,
-run artifacts, and logs are persistent under `/var/lib/redless/` and
-`/var/log/redless/`; the deployment report lists the exact paths and operating
-account. See the [Redless deployment details](docs/deployment/aggregare-server.md#redless).
+See the [Redless task guide](docs/deployment/redless-task.md) for the
+machine-callable interface, examples, and persistent artifact paths.
 
 
 Aggregare composes independently useful applications and infrastructure tools into one coherent platform.
