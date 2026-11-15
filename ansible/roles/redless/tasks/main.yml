@@ -28,6 +28,9 @@
         - /opt/aggregare/venvs/redless
         - /etc/systemd/system/redless.service
         - /usr/local/bin/redless-machine
+        - /usr/local/bin/aggregare-redless-task
+        - /usr/local/lib/aggregare/aggregare_redless_task.py
+        - /usr/local/lib/aggregare/redless_task_adapter.py
     - name: Remove the Redless deployment status record
       ansible.builtin.file:
         path: /var/lib/aggregare/status/redless.json
@@ -303,6 +306,38 @@
         - /opt/aggregare/venvs/redless/bin/redless
         - /opt/aggregare/venvs/redless/bin/redless-machine
 
+    - name: Install the root-owned Redless task adapter module
+      ansible.builtin.file:
+        path: /usr/local/lib/aggregare
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install the root-owned Redless task adapter module contents
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../../../tools/redless_task_adapter.py"
+        dest: /usr/local/lib/aggregare/redless_task_adapter.py
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install the root-owned Redless task CLI module
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../../../tools/aggregare_redless_task.py"
+        dest: /usr/local/lib/aggregare/aggregare_redless_task.py
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install the root-owned Redless task CLI wrapper
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../../../tools/aggregare-redless-task"
+        dest: /usr/local/bin/aggregare-redless-task
+        owner: root
+        group: root
+        mode: '0755'
+
     - name: Verify the installed Redless machine help as the unprivileged worker
       ansible.builtin.command:
         argv: [/opt/aggregare/venvs/redless/bin/redless-machine, --help]
@@ -313,6 +348,17 @@
       register: redless_help
       changed_when: false
       failed_when: redless_help.rc != 0
+
+    - name: Verify the installed Aggregare Redless task CLI help as the unprivileged worker
+      ansible.builtin.command:
+        argv: [/usr/local/bin/aggregare-redless-task, --help]
+      become_user: "{{ redless_user }}"
+      environment:
+        HOME: "{{ redless_home }}"
+        MSWEA_CONFIG_DIR: "{{ redless_config_path }}"
+      register: aggregare_redless_task_help
+      changed_when: false
+      failed_when: aggregare_redless_task_help.rc != 0
 
     - name: Create an isolated workspace for the deterministic contract fixture
       ansible.builtin.file:
@@ -376,7 +422,7 @@
         redless_live_run_id: "aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}"
         redless_live_workspace: "{{ redless_workspace_path }}/aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}"
         redless_live_result: "{{ redless_run_path }}/aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}.json"
-        redless_live_trajectory: "{{ redless_run_path }}/aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}.traj.json"
+        redless_live_trajectory: "{{ redless_run_path }}/aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}.trajectory.json"
         redless_live_stdout: "{{ redless_log_path }}/aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}.stdout.jsonl"
         redless_live_stderr: "{{ redless_log_path }}/aggregare-live-{{ ansible_facts.date_time.iso8601_basic_short | lower }}.stderr.log"
       when: redless_live_smoke | bool
@@ -469,8 +515,9 @@
         content: >-
           {{ {'schema_version': 'v1', 'application_id': 'redless', 'state': 'installed',
              'version': redless_version, 'deployment': {'backend': 'ansible', 'method': 'native-python',
-             'account': redless_user, 'group': redless_group, 'workspace': redless_workspace_path, 'runs': redless_run_path,
-             'logs': redless_log_path, 'coding_endpoint': redless_coding_base_url_effective,
+             'account': redless_user, 'group': redless_group, 'home': redless_home, 'workspace': redless_workspace_path, 'runs': redless_run_path,
+             'logs': redless_log_path, 'operator_cli': '/usr/local/bin/aggregare-redless-task',
+             'coding_endpoint': redless_coding_base_url_effective,
              'coding_model': redless_coding_model_effective}, 'verification': {'status': redless_fixture_verification,
              'fixture': redless_fixture_verification, 'live_model': redless_live_verification,
              'coding_readiness': redless_coding_readiness,

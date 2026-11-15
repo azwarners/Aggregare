@@ -48,6 +48,10 @@ def test_redless_uses_the_machine_contract_and_report_exposes_it():
     assert "redless_fixture_records" in tasks
     assert "redless_live_records" in tasks
     assert "trajectory_path" in tasks
+    assert "aggregare-redless-task" in tasks
+    assert "aggregare_redless_task.py" in tasks
+    assert "redless_task_adapter.py" in tasks
+    assert "operator_cli" in tasks
     assert "max_retries: 0" in tasks
     assert "redless-machine" in report
     assert "redless_live_verification" in tasks
@@ -67,6 +71,7 @@ def test_redless_live_smoke_is_disabled_by_default():
 def test_redless_catalog_declares_cli_and_no_human_credentials():
     entry = json.loads((ROOT / "catalog/v1/applications/redless.json").read_text())
     assert entry["cli"][0]["path"] == "/opt/aggregare/venvs/redless/bin/redless-machine"
+    assert any(cli["path"] == "/usr/local/bin/aggregare-redless-task" for cli in entry["cli"])
     assert entry["authentication"]["bootstrap"]["mode"] == "none"
     assert "password" not in entry["configuration"]
 
@@ -77,6 +82,9 @@ def test_redless_uninstall_preserves_data_by_default():
     normal_remove = absent_block.split("- name: Purge", 1)[0]
     assert "name: Remove the Redless deployment status record" in normal_remove
     assert "path: /var/lib/aggregare/status/redless.json" in normal_remove
+    assert "/usr/local/bin/aggregare-redless-task" in normal_remove
+    assert "/usr/local/lib/aggregare/aggregare_redless_task.py" in normal_remove
+    assert "/usr/local/lib/aggregare/redless_task_adapter.py" in normal_remove
     assert "redless_home" not in normal_remove
     assert "redless_log_path" not in normal_remove
     assert "when: redless_purge_data | bool" in absent_block

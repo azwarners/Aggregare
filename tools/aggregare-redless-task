@@ -4,8 +4,12 @@
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tools.aggregare_redless_task import main
+executable_path = Path(__file__).resolve()
+installed_lib = executable_path.parent.parent / "lib" / "aggregare"
+sys.path.insert(0, str(installed_lib))
+sys.path.insert(0, str(executable_path.parent.parent))
+sys.path.insert(0, str(executable_path.parent))
+from aggregare_redless_task import main
 
 
 raise SystemExit(main())

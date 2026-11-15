@@ -191,6 +191,8 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
             lines.append(f"- Service: `{unit}` ({unit_state})")
         if not services:
             lines.append("- Service metadata is unavailable for this application")
+        redless_operator_cli_installed = False
+        redless_operator_cli_path = ""
         for cli in entry.get("cli", []):
             if not isinstance(cli, dict):
                 continue
@@ -205,6 +207,9 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
             if app_id == "redless" and not status and not has_unit:
                 continue
             lines.append(f"- CLI: `{cli_name}` at `{cli_path}` ({state}){suffix}")
+            if app_id == "redless" and cli_name == "aggregare-redless-task":
+                redless_operator_cli_installed = installed
+                redless_operator_cli_path = cli_path
         deployment = status.get("deployment", {}) if isinstance(status, dict) else {}
         if isinstance(deployment, dict):
             account = deployment.get("account")
@@ -226,6 +231,16 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
                 "- Membership in the `{}` group grants read access to selected workspaces, run artifacts, and logs only; it does not allow becoming `{}` or reading the private model profile.".format(redless_group, redless_user),
             ])
             lines.append("- Redless executables: `/opt/aggregare/venvs/redless/bin/redless` and `/opt/aggregare/venvs/redless/bin/redless-machine`")
+            if redless_operator_cli_installed:
+                task_input_path = f"{redless_deployment.get('home', '/var/lib/redless')}/task-input.txt"
+                lines.extend([
+                    f"- Ordinary task command: `sudo -u {redless_user} -- {redless_operator_cli_path} run --task \"Say hello and explain what Redless does\"`",
+                    f"- The task command must run as `{redless_user}`; success exits 0, while failed, cancelled, malformed, missing-terminal, and timeout outcomes exit nonzero.",
+                    f"- Use `sudo -u {redless_user} -- {redless_operator_cli_path} --help` for options. Saved result, `.trajectory.json`, stdout `.jsonl`, and stderr paths are reported under the configured run/log roots above.",
+                    f"- For a long UTF-8 task, first place it where `{redless_user}` can traverse and read it: `sudo install -o {redless_user} -g {redless_group} -m 0640 ./task.txt {task_input_path}`; then run `sudo -u {redless_user} -- {redless_operator_cli_path} run --task-file {task_input_path}` and remove it with `sudo rm` when finished.",
+                    f"- If `--task-file` fails, check both path traversal and readability with `namei -l PATH` and `sudo -u {redless_user} -- test -r PATH`; do not weaken home permissions or use world-readable prompts.",
+                    f"- Automation can consume the outcome without model prose: `if sudo -u {redless_user} -- {redless_operator_cli_path} run --task \"bounded check\"; then echo succeeded; else echo failed >&2; exit 1; fi`.",
+                ])
             endpoint = safe_url(redless_deployment.get("coding_endpoint", ""))
             model = redless_deployment.get("coding_model", "")
             lines.append(f"- Coding model: `{model}` at `{endpoint or 'unknown or unavailable'}`")

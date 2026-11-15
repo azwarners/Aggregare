@@ -136,6 +136,7 @@ class DeploymentReportTests(unittest.TestCase):
             "cli": [
                 {"name": "redless", "path": "/opt/aggregare/venvs/redless/bin/redless"},
                 {"name": "redless-machine", "path": "/opt/aggregare/venvs/redless/bin/redless-machine"},
+                {"name": "aggregare-redless-task", "path": sys.executable},
             ],
             "authentication": {"bootstrap": {"mode": "none", "notes": "No human credential."}},
         }
@@ -143,7 +144,7 @@ class DeploymentReportTests(unittest.TestCase):
         (self.apps / "redless.json").write_text(json.dumps(entry))
         (self.statuses / "redless.json").write_text(json.dumps({
             "application_id": "redless", "state": "installed",
-            "deployment": {"account": "redless", "group": "redless", "workspace": "/srv/redless/workspaces", "runs": "/srv/redless/runs", "logs": "/srv/redless/logs", "coding_endpoint": "http://127.0.0.1:8080/v1", "coding_model": "coding-model"},
+            "deployment": {"account": "redless", "group": "redless", "home": "/srv/redless", "workspace": "/srv/redless/workspaces", "runs": "/srv/redless/runs", "logs": "/srv/redless/logs", "operator_cli": sys.executable, "coding_endpoint": "http://127.0.0.1:8080/v1", "coding_model": "coding-model"},
             "verification": {"status": "passed", "fixture": "passed", "live_model": "not_run", "coding_readiness": "passed"},
         }))
         content = self.render()
@@ -151,6 +152,8 @@ class DeploymentReportTests(unittest.TestCase):
             "sudo -iu redless", "group: `redless`", "/opt/aggregare/venvs/redless/bin/redless",
             "/opt/aggregare/venvs/redless/bin/redless-machine", "live model smoke `not_run`",
             "redless-machine --help", "Machine mode accepts JSONL", "not a background daemon", "/srv/redless/logs",
+            f"Ordinary task command: `sudo -u redless -- {sys.executable} run --task",
+            "--task-file /srv/redless/task-input.txt", "namei -l PATH", "echo succeeded",
         ):
             self.assertIn(expected, content)
         self.assertNotIn("never-render-this", content)

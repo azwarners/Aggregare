@@ -7,17 +7,16 @@ import grp
 import json
 import os
 import pwd
+import signal
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-from tools.redless_task_adapter import (
-    RunDescriptor,
-    allocate_run,
-    build_task_request,
-    interpret_records,
-)
+try:
+    from tools.redless_task_adapter import RunDescriptor, allocate_run, build_task_request, interpret_records
+except ModuleNotFoundError:  # Installed beside the private helper.
+    from redless_task_adapter import RunDescriptor, allocate_run, build_task_request, interpret_records
 
 
 DEFAULT_MACHINE = "/usr/local/bin/redless-machine"
@@ -102,6 +101,7 @@ def run_task(
             stderr=subprocess.PIPE,
             cwd=run.workspace_path,
             env=child_env,
+            start_new_session=(os.name == "posix"),
         )
         try:
             stdout, stderr = process.communicate(request.encode("utf-8"), timeout=timeout)
@@ -109,10 +109,16 @@ def run_task(
             timed_out = True
             stdout = exc.stdout or b""
             stderr = exc.stderr or b""
-            process.kill()
-            remaining_stdout, remaining_stderr = process.communicate()
-            stdout += remaining_stdout
-            stderr += remaining_stderr
+            _stop_local_process_group(process)
+            try:
+                remaining_stdout, remaining_stderr = process.communicate(timeout=1.0)
+            except subprocess.TimeoutExpired as still_running:
+                stdout = _merge_capture(stdout, still_running.stdout)
+                stderr = _merge_capture(stderr, still_running.stderr)
+                _close_process_pipes(process)
+            else:
+                stdout = _merge_capture(stdout, remaining_stdout)
+                stderr = _merge_capture(stderr, remaining_stderr)
     except OSError as exc:
         stderr = f"could not start redless-machine: {exc}\n".encode()
         outcome = {"outcome": "protocol_error", "code": "start_error", "statuses": []}
@@ -188,6 +194,57 @@ def _child_environment(home: Path) -> dict[str, str]:
         "LANG": os.environ.get("LANG", "C.UTF-8"),
         "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
     }
+
+
+def _stop_local_process_group(process: subprocess.Popen[bytes], *, grace: float = 1.0) -> None:
+    """Stop only this local machine process and descendants, bounded in time."""
+
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    else:
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass
+    try:
+        process.wait(timeout=grace)
+        return
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        pass
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    else:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+    try:
+        process.wait(timeout=grace)
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        pass
+
+
+def _close_process_pipes(process: subprocess.Popen[bytes]) -> None:
+    for stream in (process.stdout, process.stderr, process.stdin):
+        if stream is not None:
+            stream.close()
+
+
+def _merge_capture(previous: bytes, current: bytes | None) -> bytes:
+    current = current or b""
+    if not current:
+        return previous
+    if current.startswith(previous):
+        return current
+    if previous.endswith(current):
+        return previous
+    return previous + current
 
 
 def _finish(

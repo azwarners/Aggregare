@@ -65,6 +65,11 @@
       "name": "redless",
       "path": "/opt/aggregare/venvs/redless/bin/redless",
       "description": "Redless human-facing CLI entry point; machine requests use redless-machine."
+    },
+    {
+      "name": "aggregare-redless-task",
+      "path": "/usr/local/bin/aggregare-redless-task",
+      "description": "Aggregare one-shot task command; run as the unprivileged redless worker."
     }
   ],
   "configuration": [

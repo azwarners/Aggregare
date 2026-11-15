@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,11 @@ run_id = request["payload"]["run_id"]
 task = request["payload"]["task"]
 if task == "timeout":
     import time
+    time.sleep(2)
+elif task == "descendant":
+    import subprocess
+    subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"])
+    print(json.dumps({"type": "status", "payload": {"run_id": run_id, "state": "running"}}), flush=True)
     time.sleep(2)
 elif task == "malformed":
     print("not json")
@@ -99,6 +105,16 @@ def test_timeout_is_explicitly_ambiguous_and_artifacts_remain(tmp_path):
     assert result["code"] == "ambiguous_timeout"
     assert "not confirmed stopped" in result["message"]
     assert Path(result["stdout_path"]).exists()
+
+
+def test_timeout_kills_descendant_process_group_without_indefinite_pipe_wait(tmp_path):
+    started = time.monotonic()
+    result = run_fake(tmp_path, "descendant", timeout=0.2)
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 3
+    assert result["outcome"] == "timeout"
+    assert "running" in Path(result["stdout_path"]).read_text()
 
 
 def test_missing_config_fails_before_machine_invocation(tmp_path):
