@@ -6,5 +6,6 @@
     redless_source: https://github.com/azwarners/Redless.git
     redless_ref: 16bb8dd2d68582a55394075dfb7fbf5bb2924385
     redless_version: source-16bb8dd
+    redless_live_smoke: true
   roles:
     - redless

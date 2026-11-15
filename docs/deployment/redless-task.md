@@ -20,6 +20,12 @@ The command emits JSONL status and result records on standard output. Redless
 owns the task loop; Aggregare provides the installed package and host-level
 account and filesystem isolation.
 
+The coding profile uses the explicit `ysparr_coding_base_url` target directly
+as an OpenAI-compatible `/v1` endpoint. Ysparr stores and validates that target,
+but Redless does not route requests through the Ysparr chat service or silently
+fall back to the chat model. Installation probes `/v1/models` and requires the
+configured coding model ID before a live smoke task is attempted.
+
 ## Persistent artifacts
 
 Task workspaces, run artifacts, and logs persist under:
