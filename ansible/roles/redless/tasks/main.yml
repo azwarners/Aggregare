@@ -19,18 +19,23 @@
         state: stopped
         enabled: false
       failed_when: false
-    - name: Remove Redless installation and protected configuration
+    - name: Remove Redless application installation
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
       loop:
         - /opt/aggregare/redless
         - /opt/aggregare/venvs/redless
-        - "{{ redless_config_path }}"
         - /etc/systemd/system/redless.service
         - /usr/local/bin/redless-machine
+    - name: Purge Redless persistent data only when explicitly requested
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
         - "{{ redless_home }}"
         - "{{ redless_log_path }}"
+      when: redless_purge_data | bool
     - name: Remove the Redless account without affecting its group members
       ansible.builtin.user:
         name: "{{ redless_user }}"
@@ -46,7 +51,7 @@
   block:
     - name: Install Redless filesystem ACL and Python prerequisites
       ansible.builtin.apt:
-        name: [acl, gcc, git, python3, python3-venv, python3-pip]
+        name: [acl, git, python3, python3-venv, python3-pip]
         state: present
         update_cache: true
         cache_valid_time: 3600
@@ -146,47 +151,74 @@
               api_key: llama.cpp-placeholder
             model_name: {{ redless_coding_model | to_json }}
 
-    - name: Remove a legacy Redless executable link before installing the wrapper
+    - name: Ensure the Redless package entry points are root-owned and non-writable by the worker
       ansible.builtin.file:
-        path: /usr/local/bin/redless-machine
-        state: absent
-
-    - name: Install the fixed Redless privilege-dropping launcher source
-      ansible.builtin.copy:
-        src: redless-machine-launcher.c
-        dest: /usr/local/lib/aggregare/redless-machine-launcher.c
+        path: "{{ item }}"
         owner: root
         group: root
-        mode: '0644'
+        mode: '0755'
+      loop:
+        - /opt/aggregare/venvs/redless/bin/redless
+        - /opt/aggregare/venvs/redless/bin/redless-machine
 
-    - name: Build the fixed Redless privilege-dropping launcher
+    - name: Verify the installed Redless machine help as the unprivileged worker
       ansible.builtin.command:
-        argv:
-          - gcc
-          - -O2
-          - -Wall
-          - -Wextra
-          - -o
-          - /usr/local/bin/redless-machine
-          - /usr/local/lib/aggregare/redless-machine-launcher.c
+        argv: [/opt/aggregare/venvs/redless/bin/redless-machine, --help]
+      become_user: "{{ redless_user }}"
+      environment:
+        HOME: "{{ redless_home }}"
+        MSWEA_CONFIG_DIR: "{{ redless_config_path }}"
+      register: redless_help
+      changed_when: false
+      failed_when: redless_help.rc != 0
 
-    - name: Make the Redless launcher root-owned and non-group-writable
+    - name: Create an isolated workspace for the deterministic contract fixture
       ansible.builtin.file:
-        path: /usr/local/bin/redless-machine
-        owner: root
-        group: root
-        mode: '4755'
+        path: /tmp/aggregare-redless-fixture
+        state: directory
+        owner: "{{ redless_user }}"
+        group: "{{ redless_group }}"
+        mode: '0700'
 
-    - name: Verify the installed Redless machine contract as the unprivileged worker
+    - name: Run the real Redless machine entry point with its pinned fixture
       ansible.builtin.command:
-        argv: [/usr/local/bin/redless-machine]
-        stdin: "{\"type\":\"capabilities\"}\n"
-      register: redless_capabilities
+        argv: [/opt/aggregare/venvs/redless/bin/redless-machine, --fixture]
+        stdin: >-
+          {"type":"task","payload":{"contract_version":"1","run_id":"aggregare-install-fixture","correlation_id":"aggregare-install","task":"fixture:success","workspace":{"contract_version":"1","mode":"existing","path":"/tmp/aggregare-redless-fixture"}}}
+      become_user: "{{ redless_user }}"
+      environment:
+        HOME: "{{ redless_home }}"
+        MSWEA_CONFIG_DIR: "{{ redless_config_path }}"
+      register: redless_fixture
+      changed_when: false
+      failed_when: redless_fixture.rc != 0 or redless_fixture.stdout_lines | length < 3
+
+    - name: Parse the deterministic fixture JSONL output
+      ansible.builtin.set_fact:
+        redless_fixture_records: "{{ redless_fixture.stdout_lines | map('from_json') | list }}"
+
+    - name: Verify the deterministic fixture terminal result and clean stderr
+      ansible.builtin.assert:
+        that:
+          - redless_fixture_records | selectattr('type', 'equalto', 'status') | list | length >= 2
+          - redless_fixture_records | selectattr('type', 'equalto', 'result') | list | length == 1
+          - (redless_fixture_records | selectattr('type', 'equalto', 'result') | list | first).payload.run_id == 'aggregare-install-fixture'
+          - (redless_fixture_records | selectattr('type', 'equalto', 'result') | list | first).payload.state == 'succeeded'
+          - redless_fixture.stderr | trim == ''
+
+    - name: Verify malformed machine input returns a structured JSONL error
+      ansible.builtin.command:
+        argv: [/opt/aggregare/venvs/redless/bin/redless-machine, --fixture]
+        stdin: "not-json\n"
+      become_user: "{{ redless_user }}"
+      environment:
+        HOME: "{{ redless_home }}"
+        MSWEA_CONFIG_DIR: "{{ redless_config_path }}"
+      register: redless_malformed
       changed_when: false
       failed_when: >-
-        redless_capabilities.rc != 0 or
-        ('"type":"capabilities"' not in redless_capabilities.stdout) or
-        ('"task_execution"' not in redless_capabilities.stdout)
+        redless_malformed.rc != 0 or
+        (redless_malformed.stdout_lines | map('from_json') | list | first).type != 'error'
 
     - name: Write Redless deployment status
       ansible.builtin.copy:
@@ -199,4 +231,4 @@
              'version': redless_version, 'deployment': {'backend': 'ansible', 'method': 'native-python',
              'account': redless_user, 'workspace': redless_workspace_path, 'runs': redless_run_path,
              'logs': redless_log_path}, 'verification': {'status': 'passed',
-             'check': 'redless-machine capabilities as ' ~ redless_user}} | to_nice_json }}
+             'check': 'redless-machine help and deterministic fixture as ' ~ redless_user}} | to_nice_json }}

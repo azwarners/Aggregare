@@ -165,17 +165,17 @@ the standard Linux account `redless` with its home at `/var/lib/redless`, but it
 does not create a human login password or grant the account sudo, Docker, or
 other administrative access.
 
-Use the installed command directly as a configured primary Aggregare user:
+Use the installed command through the normal administrator mechanism:
 
 ```sh
-printf '%s\n' '{"type":"capabilities"}' | redless-machine
+printf '%s\n' '{"type":"capabilities"}' | sudo -u redless -- /opt/aggregare/venvs/redless/bin/redless-machine
 ```
 
-`redless-machine` is a root-owned launcher at `/usr/local/bin/redless-machine`.
-It automatically drops to the `redless` UID/GID before executing Redless, sets
-the persistent private profile from `/var/lib/redless/.config/`, and preserves
-the JSONL contract.
-Callers do not switch users and do not need a Redless password. Task workspaces,
+`redless-machine` is the root-owned package entry point at
+`/opt/aggregare/venvs/redless/bin/redless-machine`; it is run as the
+unprivileged `redless` UID/GID and uses the persistent private profile from
+`/var/lib/redless/.config/`.
+Callers do not need a Redless password. Task workspaces,
 run artifacts, and logs are stored in `/var/lib/redless/workspaces`,
 `/var/lib/redless/runs`, and `/var/log/redless`; configured primary users receive
 group-based access to those paths only.

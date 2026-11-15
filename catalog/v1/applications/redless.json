@@ -58,7 +58,7 @@
   "cli": [
     {
       "name": "redless-machine",
-      "path": "/usr/local/bin/redless-machine",
+      "path": "/opt/aggregare/venvs/redless/bin/redless-machine",
       "description": "Redless machine-callable JSONL task runner; workers execute as the unprivileged redless account."
     }
   ],
@@ -85,7 +85,7 @@
     "bootstrap": {
       "mode": "none",
       "idempotent": true,
-      "notes": "The redless Linux account is an unprivileged worker identity, not a human login. No password or SSH credential is generated. Invoke /usr/local/bin/redless-machine; the worker runs as redless."
+      "notes": "The redless Linux account is an unprivileged worker identity, not a human login. No password or SSH credential is generated. Invoke the virtualenv redless-machine entry point as redless."
     },
     "manual_steps": [
       "Submit versioned JSONL task records to redless-machine. Inspect workspaces, run artifacts, and logs using configured primary Aggregare group access."

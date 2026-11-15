@@ -1,4 +1,7 @@
 redless_state: present
+# Application removal preserves workspaces, results, logs, and the profile.
+# Set this only for an explicit, operator-confirmed purge.
+redless_purge_data: false
 redless_user: redless
 redless_group: redless
 redless_home: /var/lib/redless
