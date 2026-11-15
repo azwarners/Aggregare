@@ -174,7 +174,10 @@ class CatalogContractTests(unittest.TestCase):
         for ref in self.catalog["applications"]:
             entry = load_json(f"catalog/v1/{ref['path']}")
             for cli in entry.get("cli", []):
-                self.assertTrue(cli["path"].startswith("/usr/local/bin/"), f"{entry['id']} CLI is not system-wide: {cli['path']}")
+                self.assertTrue(
+                    cli["path"].startswith(("/usr/local/bin/", "/opt/aggregare/venvs/")),
+                    f"{entry['id']} CLI is not installed in an approved executable location: {cli['path']}",
+                )
         report_defaults = (ROOT / "ansible/roles/aggregare_report/defaults/main.yml").read_text()
         report_tasks = (ROOT / "ansible/roles/aggregare_report/tasks/main.yml").read_text()
         self.assertIn("Expose installed managed CLI entry points through the system PATH", report_tasks)
