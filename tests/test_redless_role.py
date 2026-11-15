@@ -75,6 +75,8 @@ def test_redless_uninstall_preserves_data_by_default():
     tasks = (ROOT / "ansible/roles/redless/tasks/main.yml").read_text()
     absent_block = tasks.split("- name: Remove Redless", 1)[1].split("- name: Install and configure Redless", 1)[0]
     normal_remove = absent_block.split("- name: Purge", 1)[0]
+    assert "name: Remove the Redless deployment status record" in normal_remove
+    assert "path: /var/lib/aggregare/status/redless.json" in normal_remove
     assert "redless_home" not in normal_remove
     assert "redless_log_path" not in normal_remove
     assert "when: redless_purge_data | bool" in absent_block

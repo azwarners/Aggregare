@@ -165,6 +165,29 @@ class DeploymentReportTests(unittest.TestCase):
         self.assertNotIn("/opt/aggregare/venvs/redless/bin/redless-machine", content)
         self.assertNotIn("live model smoke `passed`", content.lower())
 
+    def test_report_after_normal_redless_uninstall_ignores_removed_status_record(self):
+        redless = {"id": "redless", "display_name": "Redless", "services": [], "cli": [{"name": "redless-machine", "path": "/opt/aggregare/venvs/redless/bin/redless-machine"}]}
+        self.catalog.joinpath("index.json").write_text(json.dumps({"applications": [
+            {"id": "enabled", "path": "applications/enabled.json"},
+            {"id": "redless", "path": "applications/redless.json"},
+        ]}))
+        self.apps.joinpath("redless.json").write_text(json.dumps(redless))
+        self.statuses.joinpath("redless.json").write_text(json.dumps({
+            "application_id": "redless", "state": "installed",
+            "deployment": {"account": "redless", "workspace": "/var/lib/redless/workspaces"},
+            "verification": {"status": "passed", "fixture": "passed"},
+        }))
+
+        self.statuses.joinpath("redless.json").unlink()
+        content = self.render(expected_apps={"redless"})
+
+        self.assertIn("Enabled App", content)
+        self.assertIn("Redless", content)
+        self.assertIn("configured but not detected", content)
+        self.assertNotIn("sudo -iu redless", content)
+        self.assertNotIn("/opt/aggregare/venvs/redless/bin/redless-machine", content)
+        self.assertNotIn("live model smoke `passed`", content.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

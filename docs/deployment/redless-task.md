@@ -38,11 +38,11 @@ Configured primary users receive read access to completed and newly created
 results through the `redless` group. They do not receive write access to those
 artifacts, and the worker's private model profile is not group-readable.
 
-Removing Redless with `redless_state: absent` removes only the application
-source, virtual environment, and command. It preserves these persistent paths
-and the private profile. A destructive purge requires the explicit operator
-override `redless_purge_data: true` in the removal invocation; back up the data
-first.
+Removing Redless with `redless_state: absent` removes the application source,
+virtual environment, command, and Redless deployment status record. It
+preserves these persistent paths and the private profile. A destructive purge
+requires the explicit operator override `redless_purge_data: true` in the
+removal invocation; back up the data first.
 
 For the account and deployment details, see the [Redless section of
 the Ubuntu Server deployment guide](aggregare-server.md#redless).

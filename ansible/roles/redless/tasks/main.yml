@@ -28,6 +28,10 @@
         - /opt/aggregare/venvs/redless
         - /etc/systemd/system/redless.service
         - /usr/local/bin/redless-machine
+    - name: Remove the Redless deployment status record
+      ansible.builtin.file:
+        path: /var/lib/aggregare/status/redless.json
+        state: absent
     - name: Purge Redless persistent data only when explicitly requested
       ansible.builtin.file:
         path: "{{ item }}"
