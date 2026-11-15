@@ -29,7 +29,8 @@ if task == "timeout":
     time.sleep(2)
 elif task == "descendant":
     import subprocess
-    subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"])
+    child_code = "import os, signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); open('descendant.pid', 'w').write(str(os.getpid())); time.sleep(10)"
+    subprocess.Popen([sys.executable, "-c", child_code])
     print(json.dumps({"type": "status", "payload": {"run_id": run_id, "state": "running"}}), flush=True)
     time.sleep(2)
 elif task == "malformed":
@@ -112,9 +113,22 @@ def test_timeout_kills_descendant_process_group_without_indefinite_pipe_wait(tmp
     result = run_fake(tmp_path, "descendant", timeout=0.2)
     elapsed = time.monotonic() - started
 
-    assert elapsed < 3
+    assert elapsed < 4
     assert result["outcome"] == "timeout"
     assert "running" in Path(result["stdout_path"]).read_text()
+    child_pid_path = tmp_path / "workspaces" / result["run_id"] / "descendant.pid"
+    child_pid = int(child_pid_path.read_text())
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        try:
+            state = Path(f"/proc/{child_pid}/stat").read_text().split()[2]
+        except FileNotFoundError:
+            break
+        if state == "Z":
+            break
+        time.sleep(0.02)
+    else:
+        pytest.fail(f"SIGTERM-resistant descendant {child_pid} is still running")
 
 
 def test_missing_config_fails_before_machine_invocation(tmp_path):

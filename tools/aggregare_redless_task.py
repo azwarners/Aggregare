@@ -103,13 +103,19 @@ def run_task(
             env=child_env,
             start_new_session=(os.name == "posix"),
         )
+        process_group_id = None
+        if os.name == "posix":
+            try:
+                process_group_id = os.getpgid(process.pid)
+            except ProcessLookupError:
+                process_group_id = process.pid
         try:
             stdout, stderr = process.communicate(request.encode("utf-8"), timeout=timeout)
         except subprocess.TimeoutExpired as exc:
             timed_out = True
             stdout = exc.stdout or b""
             stderr = exc.stderr or b""
-            _stop_local_process_group(process)
+            _stop_local_process_group(process, process_group_id=process_group_id)
             try:
                 remaining_stdout, remaining_stderr = process.communicate(timeout=1.0)
             except subprocess.TimeoutExpired as still_running:
@@ -196,12 +202,18 @@ def _child_environment(home: Path) -> dict[str, str]:
     }
 
 
-def _stop_local_process_group(process: subprocess.Popen[bytes], *, grace: float = 1.0) -> None:
+def _stop_local_process_group(
+    process: subprocess.Popen[bytes],
+    *,
+    process_group_id: int | None = None,
+    grace: float = 1.0,
+) -> None:
     """Stop only this local machine process and descendants, bounded in time."""
 
+    group_id = process_group_id or process.pid
     if os.name == "posix":
         try:
-            os.killpg(process.pid, signal.SIGTERM)
+            os.killpg(group_id, signal.SIGTERM)
         except ProcessLookupError:
             pass
     else:
@@ -211,12 +223,13 @@ def _stop_local_process_group(process: subprocess.Popen[bytes], *, grace: float 
             pass
     try:
         process.wait(timeout=grace)
-        return
     except (ProcessLookupError, subprocess.TimeoutExpired):
         pass
+    # The group leader may have exited while a descendant still owns the
+    # pipes. Always make a bounded second pass over the original group.
     if os.name == "posix":
         try:
-            os.killpg(process.pid, signal.SIGKILL)
+            os.killpg(group_id, signal.SIGKILL)
         except ProcessLookupError:
             pass
     else:
