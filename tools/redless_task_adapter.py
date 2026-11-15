@@ -60,16 +60,18 @@ def allocate_run(
         run_id = f"aggregare-{uuid.uuid4().hex}-{secrets.token_hex(4)}"
         workspace = workspace_base / run_id
         try:
-            workspace.mkdir(mode=0o700)
+            # The Redless roots carry default ACLs.  0750 prevents unrelated
+            # users from entering the workspace while leaving the inherited ACL
+            # mask free to grant configured group read/traverse access.
+            workspace.mkdir(mode=0o750)
         except FileExistsError:
             continue
-        _chmod_private(workspace)
         descriptor = RunDescriptor(
             run_id=run_id,
             workspace_path=workspace,
             result_path=runs_base / f"{run_id}.result.json",
-            trajectory_path=runs_base / f"{run_id}.trajectory.jsonl",
-            stdout_path=logs_base / f"{run_id}.stdout.log",
+            trajectory_path=runs_base / f"{run_id}.trajectory.json",
+            stdout_path=logs_base / f"{run_id}.stdout.jsonl",
             stderr_path=logs_base / f"{run_id}.stderr.log",
         )
         if any(path.exists() or path.is_symlink() for path in (
@@ -170,7 +172,7 @@ def interpret_records(records: Iterable[str] | str, expected_run_id: str) -> dic
                 return _protocol_error("malformed_result", line_number=line_number)
             if terminal is not None:
                 return _protocol_error("duplicate_terminal", line_number=line_number)
-            terminal = payload
+            terminal = {"result": payload}
             continue
 
         if record_type == "error":
@@ -192,7 +194,8 @@ def interpret_records(records: Iterable[str] | str, expected_run_id: str) -> dic
         return {"outcome": "missing_terminal", "statuses": statuses}
     if "error" in terminal:
         return {"outcome": "protocol_error", "error": terminal["error"], "statuses": statuses}
-    return {"outcome": terminal["state"], "result": terminal, "statuses": statuses}
+    result = terminal["result"]
+    return {"outcome": result["state"], "result": result, "statuses": statuses}
 
 
 def _prepare_root(value: str | os.PathLike[str]) -> Path:
@@ -202,15 +205,7 @@ def _prepare_root(value: str | os.PathLike[str]) -> Path:
     root.mkdir(mode=0o750, parents=True, exist_ok=True)
     if not root.is_dir() or root.is_symlink():
         raise ValueError(f"Redless root is not a directory: {root}")
-    _chmod_private(root)
     return root.resolve()
-
-
-def _chmod_private(path: Path) -> None:
-    # Preserve setgid and deployment-set group/ACL bits while ensuring no
-    # other-user permissions are introduced by a permissive process umask.
-    mode = path.stat().st_mode & 0o7777
-    path.chmod(mode & 0o2770)
 
 
 def _require_contained(path: Path, root: Path) -> None:
