@@ -1,0 +1,5 @@
+---
+- name: Restart native Python application service
+  ansible.builtin.systemd_service:
+    name: "{{ python_app_service_name }}"
+    state: restarted

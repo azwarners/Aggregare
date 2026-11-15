@@ -30,6 +30,7 @@ class DeploymentReportTests(unittest.TestCase):
         ]}))
         entries = [
             {"id": "enabled", "display_name": "Enabled App", "services": [{"name": "enabled.service", "ports": [8765]}],
+             "cli": [{"name": "enabled-cli", "path": sys.executable, "description": "Test CLI"}],
              "authentication": {"manual_steps": ["Create the first user in the browser."]}},
             {"id": "disabled", "display_name": "Disabled App", "services": [{"name": "disabled.service", "ports": [8766]}]},
             {"id": "missing-meta", "display_name": "Missing Metadata App", "services": []},
@@ -64,6 +65,25 @@ class DeploymentReportTests(unittest.TestCase):
         self.assertIn("Configured endpoint: unknown or unavailable", content)
         self.assertIn("Service metadata is unavailable", content)
 
+    def test_report_lists_installed_application_cli(self):
+        content = self.render()
+        self.assertIn(f"CLI: `enabled-cli` at `{sys.executable}` (installed) — Test CLI", content)
+
+    def test_report_lists_worker_account_and_persistent_paths_without_credentials(self):
+        self.statuses.joinpath("enabled.json").write_text(json.dumps({
+            "application_id": "enabled", "state": "running",
+            "deployment": {
+                "account": "worker", "workspace": "/var/lib/worker/workspaces",
+                "runs": "/var/lib/worker/runs", "logs": "/var/log/worker",
+            },
+        }))
+        content = self.render()
+        self.assertIn("Operating account: `worker`", content)
+        self.assertIn("Workspace path: `/var/lib/worker/workspaces`", content)
+        self.assertIn("Run artifacts: `/var/lib/worker/runs`", content)
+        self.assertIn("Log path: `/var/log/worker`", content)
+        self.assertNotIn("password", content.lower())
+
     def test_report_redacts_credentials_and_credential_bearing_urls(self):
         content = self.render()
         for secret in ("token=secret", "never-render-this", "admin:"):
@@ -80,6 +100,12 @@ class DeploymentReportTests(unittest.TestCase):
         content = self.render(expected_apps={"disabled"})
         self.assertIn("Disabled App", content)
         self.assertIn("Not detected; the application may be disabled, skipped, or not installed", content)
+
+    def test_report_has_easy_to_scan_configured_application_inventory(self):
+        content = self.render(expected_apps={"disabled"})
+        self.assertIn("## Configured application inventory", content)
+        self.assertIn("- Enabled App (`enabled`) — running", content)
+        self.assertIn("- Disabled App (`disabled`) — configured but not detected", content)
 
     def test_reapplication_content_is_stable_except_explicit_timestamp(self):
         self.assertEqual(self.render(), self.render())

@@ -5,8 +5,8 @@ Ansible automation. Aggregare is not one dashboard that replaces the
 applications it installs.
 
 The bootstrap installs the default Aggregare operating-system bundle together:
-Open WebUI, Ysparr, Apmatia, Memos, HabitSync, Vikunja, OpenIPE, and
-Sidecaravan shared team memory. The
+Open WebUI, Ysparr, Apmatia, Memos, HabitSync, Vikunja, OpenIPE, Sidecaravan
+shared team memory, and Ladcemas-Lite. The
 independent application playbooks remain available for later configuration and
 reapplication. Adding an application to the default bundle does not replace or
 remove applications already installed.
@@ -119,11 +119,15 @@ sudo cat /var/lib/aggregare/status/memos.json
 The default bundle installs Sidecaravan's `scv` command and the pinned
 Memkeeper v0.5.3 release binary automatically; no separate Memkeeper install
 is required. The memory store is local and does not require an LLM.
-For a deployment from the public repositories, pin
-`sidecaravan_source_ref` to a reviewed Sidecaravan branch or commit in protected
-inventory variables. For development, set `sidecaravan_source_path` to a
-controller-local checkout; this is useful before the Sidecaravan change has
-been pushed to its upstream repository.
+The checked-in development bundle pins Sidecaravan, Ysparr, and Apmatia to the
+coordinated test branches, so a fresh Aggregare install pulls matching
+application versions automatically. After those branches are promoted, change
+the pins back to `main` in the role defaults. For any other reviewed branch
+or commit, override the corresponding source-ref variables in protected
+inventory.
+For changes that have not been pushed upstream, set
+`sidecaravan_source_path` to a controller-local checkout; this is useful for
+development and preserves the same automated installation path.
 
 The role creates a random root-only team token on first initialization unless
 `sidecaravan_team_token` is supplied through Ansible Vault. Retrieve or
@@ -153,6 +157,35 @@ that is ever required.
 The service status should say `active`; the status record should report a
 passed verification. If you chose LAN access, use the LAN address printed by
 the installer instead of `127.0.0.1` in the `curl` command.
+
+### Redless
+
+Redless is installed as an unprivileged bounded-task worker. Aggregare creates
+the standard Linux account `redless` with its home at `/var/lib/redless`, but it
+does not create a human login password or grant the account sudo, Docker, or
+other administrative access.
+
+Use the installed command directly as a configured primary Aggregare user:
+
+```sh
+printf '%s\n' '{"type":"capabilities"}' | redless-machine
+```
+
+`redless-machine` is a root-owned launcher at `/usr/local/bin/redless-machine`.
+It automatically drops to the `redless` UID/GID before executing Redless, sets
+the persistent private profile from `/var/lib/redless/.config/`, and preserves
+the JSONL contract.
+Callers do not switch users and do not need a Redless password. Task workspaces,
+run artifacts, and logs are stored in `/var/lib/redless/workspaces`,
+`/var/lib/redless/runs`, and `/var/log/redless`; configured primary users receive
+group-based access to those paths only.
+
+Sidecaravan exposes its local MCP boundary through the administrator-protected
+`sidecaravan-mcp.socket` Unix socket and provides the `scv` and `memkeeper`
+commands. OpenIPE runs its REST API as `openipe.service` on loopback port 8002.
+Ladcemas-Lite runs as `ladcemas-lite.service` on the same loopback or private
+LAN bind address selected for the other user-facing applications, on port 5000,
+and reads the generated deployment report.
 
 The default bundle includes AI chat and productivity applications. Open
 WebUI listens on port 8080 and Ysparr on port 8000; first-party Python
@@ -225,12 +258,19 @@ Apmatia prompt as published. Complete a chat from the Open WebUI interface as a
 separate check; the command above tests Ysparr directly, not the browser path.
 
 Aggregare disables Open WebUI's Ollama, direct provider, web search, code
-execution, code interpreter, memory, and subagent features. It does not
-configure Open WebUI Knowledge/RAG, workspace tools, functions, or pipelines.
-The pinned Open WebUI version has no environment-level master switch for all
-of those features, so do not treat them as part of this integration or enable
-them without separately configuring and securing them. No Open WebUI plugin,
-pipeline, RAG, or custom agent content is installed by Aggregare.
+execution, code interpreter, memory, subagents, and plugins. The plugin master
+switch also disables Open WebUI's built-in Tools, Functions, OpenAPI/MCP tool
+servers, and Open Terminal integrations. Open WebUI is intentionally a
+chat-only frontend in Aggregare; optional upstream capabilities remain off
+unless a future configuration explicitly enables them. These environment
+settings are applied to the generated service definition and require an Open
+WebUI service restart to take effect. Reapplying Aggregare or recreating the
+service preserves the settings and the existing Open WebUI database, accounts,
+chats, and Ysparr connection. Aggregare also persists the model-default
+metadata that disables built-in tools and removes attached Tools from managed
+model records while preserving unrelated model settings. Aggregare does not
+configure Open WebUI Knowledge/RAG or install plugin, pipeline, RAG, or custom
+agent content.
 
 HabitSync receives a generated local login using the account that ran the
 installer as its username; the initial login appears in the deployment report.
@@ -255,11 +295,18 @@ inventory's protected secret source and run the same command with `--become`
 without `--ask-become-pass`.
 
 The installer prompts for the chat endpoint and checks `GET /v1/models`
-from the Aggregare host before installing the bundle. It also collects the
-chat model ID, coding endpoint URL, and coding model ID. The chat endpoint
+from the Aggregare host before installing the bundle. If that endpoint returns
+one model, the installer selects it automatically for chat. If it returns
+multiple models, the installer displays them as a numbered list for selection.
+The same automatic selection or numbered list is used for the coding endpoint.
+The installer also collects the coding endpoint URL. The chat endpoint
 continues to serve Open WebUI chats and Apmatia agents. Ysparr lists the
 configured coding model as a separate selectable model; requests using that
-ID go to the coding endpoint. Enter endpoint addresses as `HOST:PORT` (for
+ID go to the coding endpoint. Apmatia agents declare their backend type as
+`openai_compatible`; Aggregare automatically maps that type to the selected
+Ysparr chat model. Operators can override or add `ysparr_model_type_routes`
+when an extension requires a different upstream model ID. Enter endpoint
+addresses as `HOST:PORT` (for
 example `192.168.1.42:8000`) or include `http://` or `https://`; a missing
 scheme defaults to `http://`. URLs ending in `/v1` are accepted. Ysparr stores
 normalized root URLs and adds `/v1` to API requests. These values are saved in
@@ -273,7 +320,8 @@ To supply the endpoint without entering it at the installer prompt, use
 `./install.sh --llama-cpp-url http://HOST:PORT --chat-model CHAT_ID --coding-llm-url http://CODE_HOST:PORT --coding-model CODE_ID`; host-time, identity, and LAN
 prompts still require a terminal. For direct or unattended
 Ansible use, set `ysparr_upstream_base_url`, `ysparr_chat_model`,
-`ysparr_coding_base_url`, and `ysparr_coding_model` in inventory variables and run
+`ysparr_coding_base_url`, `ysparr_coding_model`, and optionally
+`ysparr_model_type_routes` in inventory variables and run
 `ansible-playbook -i INVENTORY playbooks/default.yml --become`; the role
 checks both `/v1/models` endpoints and verifies the configured model IDs,
 configures Ysparr, and persists the settings. To change an endpoint or model
@@ -365,11 +413,12 @@ Some applications need extra setup:
   model file under `/var/lib/aggregare/llama.cpp/models`.
 - **ComfyUI** uses CPU mode and does not download model files. GPU setup is not
   part of this Phase 2 foundation.
-- **Apmatia** runs a loopback-only core API on port 8001. **OpenIPE** and
-  **Redless** remain Python packages or command-line tools.
-- **TroubleShell** is a desktop application, while **Ladcemas** still has no
-  installable role. **Sidecaravan** has an installable native Python/Memkeeper
-  role as described above; future agent-facing integration remains separate.
+- **Apmatia** runs a loopback-only core API on port 8001 and installs the
+  `apmatia` CLI in its isolated virtual environment. **OpenIPE** runs its
+  REST API as `openipe.service`; it does not yet ship an `openipe` CLI.
+- **TroubleShell** is a desktop application. **Ladcemas-Lite** is installed as
+  a local launcher service. **Sidecaravan** installs the `scv` and `memkeeper`
+  CLIs plus its MCP socket service.
 
 The default system bundle and catalog are the source of truth for the
 applications Aggregare installs. The bootstrap delegates to the same Ansible

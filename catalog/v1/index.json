@@ -19,6 +19,10 @@
       "path": "applications/sidecaravan.json"
     },
     {
+      "id": "memkeeper",
+      "path": "applications/memkeeper.json"
+    },
+    {
       "id": "apmatia",
       "path": "applications/apmatia.json"
     },

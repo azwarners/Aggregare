@@ -9,6 +9,7 @@ import json
 import os
 import re
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -132,13 +133,31 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
         f"- Host addresses: {', '.join(addresses) if addresses else 'unknown'}",
         f"- Generated: {now.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
         f"- Aggregare version: {version or 'unknown'}", "",
-        "## Applications", "",
+        "## Configured application inventory", "",
+        "The entries below are the catalog applications selected for this deployment."
+        " Detailed status and removal-relevant paths follow in the application sections.", "",
     ]
     if not apps:
-        lines.append("No installed Aggregare applications could be verified.")
+        lines.append("No configured Aggregare applications could be verified.")
     for entry, status, states in sorted(apps, key=lambda item: item[0].get("display_name", item[0].get("id", "" )).casefold()):
         app_id = entry.get("id", "unknown")
         name = entry.get("display_name", app_id)
+        if app_id in failed_apps:
+            inventory_state = "failed during this installer run"
+        elif status:
+            inventory_state = f"{status.get('state', 'unknown')}"
+        elif any(value != "not installed" for value in states.values()):
+            inventory_state = "service detected; application status unverified"
+        elif app_id in expected_apps:
+            inventory_state = "configured but not detected"
+        else:
+            inventory_state = "detected; application status unverified"
+        lines.append(f"- {name} (`{app_id}`) — {inventory_state}")
+    lines.extend(["", "## Applications", ""])
+    for entry, status, states in sorted(apps, key=lambda item: item[0].get("display_name", item[0].get("id", "" )).casefold()):
+        app_id = entry.get("id", "unknown")
+        name = entry.get("display_name", app_id)
+        has_unit = any(value != "not installed" for value in states.values())
         state = status.get("state", "unknown") if status else "unknown"
         verification_data = status.get("verification") if status and isinstance(status.get("verification"), dict) else {}
         verification = verification_data.get("status", "unknown")
@@ -172,6 +191,27 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
             lines.append(f"- Service: `{unit}` ({unit_state})")
         if not services:
             lines.append("- Service metadata is unavailable for this application")
+        for cli in entry.get("cli", []):
+            if not isinstance(cli, dict):
+                continue
+            cli_name = cli.get("name", "")
+            cli_path = cli.get("path", "")
+            if not isinstance(cli_name, str) or not isinstance(cli_path, str) or not cli_name or not cli_path:
+                continue
+            installed = Path(cli_path).is_file() or shutil.which(cli_path) is not None
+            description = cli.get("description", "")
+            suffix = f" — {description}" if isinstance(description, str) and description else ""
+            state = "installed" if installed else "not detected"
+            lines.append(f"- CLI: `{cli_name}` at `{cli_path}` ({state}){suffix}")
+        deployment = status.get("deployment", {}) if isinstance(status, dict) else {}
+        if isinstance(deployment, dict):
+            account = deployment.get("account")
+            if isinstance(account, str) and account:
+                lines.append(f"- Operating account: `{account}` (unprivileged worker; no human login credentials generated)")
+            for label, key in (("Workspace path", "workspace"), ("Run artifacts", "runs"), ("Log path", "logs")):
+                path = deployment.get(key)
+                if isinstance(path, str) and path:
+                    lines.append(f"- {label}: `{path}`")
         auth = entry.get("authentication", {})
         bootstrap = auth.get("bootstrap", {}) if isinstance(auth, dict) else {}
         if isinstance(bootstrap, dict):
@@ -206,6 +246,7 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
         lines.append("No Aggregare-managed services were detected.")
     lines.extend([
         "", "## Management and logs", "",
+        "- Aggregare CLI: `aggregare report` and `aggregare summary` (`/usr/local/bin/aggregare`).",
         "- Reapply from an Aggregare checkout with `./install.sh`.",
         "- Aggregare configuration directory: `/etc/aggregare` (may contain secrets; keep protected).",
         "- Application status records: `/var/lib/aggregare/status`.",

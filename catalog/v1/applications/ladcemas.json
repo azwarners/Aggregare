@@ -1,23 +1,43 @@
 {
   "id": "ladcemas",
-  "display_name": "Ladcemas",
-  "description": "Ladcemas curated application entry.",
+  "display_name": "Ladcemas-Lite",
+  "description": "Read-only launcher for the installed Aggregare applications in the deployment report.",
   "ownership": "aggregare",
   "category": "control-plane",
   "source": {
     "name": "Aggregare / Ladcemas",
     "upstream": "https://github.com/azwarners/Ladcemas"
   },
-  "version": "unreleased",
-  "status": "blocked",
-  "install_methods": [],
+  "version": "0.1.0",
+  "status": "experimental",
+  "install_methods": ["native-python-service"],
   "capabilities": {
-    "install": false,
-    "update": false,
-    "remove": false,
-    "verify": false
+    "install": true,
+    "update": true,
+    "remove": true,
+    "verify": true,
+    "service_management": true
   },
-  "unsupported_operations": [
-    "repository-empty"
+  "entry_point": "ansible/playbooks/ladcemas.yml",
+  "deployments": [
+    {
+      "method": "native-python-service",
+      "backend": "ansible",
+      "entry_point": "ansible/playbooks/ladcemas.yml",
+      "reference": "main",
+      "requirements": ["system:git", "system:python3", "system:python3-venv"]
+    }
+  ],
+  "platforms": [
+    {"name": "ubuntu", "versions": ["24.04", "26.04"], "architectures": ["amd64", "arm64"]}
+  ],
+  "dependencies": ["system:git", "system:python3", "system:python3-venv", "application:aggregare-report"],
+  "services": [
+    {
+      "name": "ladcemas-lite.service",
+      "ports": [5000],
+      "data_paths": [],
+      "endpoints": ["http://127.0.0.1:5000/"]
+    }
   ]
 }

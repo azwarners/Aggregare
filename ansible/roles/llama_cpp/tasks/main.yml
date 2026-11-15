@@ -32,6 +32,7 @@
       loop:
         - /opt/aggregare/llama.cpp
         - /var/lib/aggregare/status/llama-cpp.json
+        - /usr/local/bin/llama-server
 
 - name: Install and build llama.cpp
   when: llama_cpp_state == 'present'
@@ -128,6 +129,15 @@
       ansible.builtin.command:
         argv: [/opt/aggregare/llama.cpp/build/bin/llama-server, --version]
       changed_when: false
+
+    - name: Expose llama-server through the system PATH
+      ansible.builtin.file:
+        src: /opt/aggregare/llama.cpp/build/bin/llama-server
+        dest: /usr/local/bin/llama-server
+        state: link
+        owner: root
+        group: root
+        force: true
 
     - name: Verify inference endpoint when a model is present
       ansible.builtin.uri:

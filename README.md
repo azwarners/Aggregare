@@ -2,7 +2,7 @@
 
 ## Implemented features and boundaries
 
-**Available today:** Ubuntu Server/Ansible-oriented installation scaffolding; a default bundle with Open WebUI, Ysparr, Apmatia, Memos, HabitSync, Vikunja, OpenIPE, and Sidecaravan shared team memory; published Apmatia starter-agent discovery through Ysparr; documented application and composition contracts; a selectable identity provider (`kanidm`, `external_oidc`, or `none`), with pinned Kanidm service deployment and persisted endpoint settings; identity requirement inspection via `./tools/aggregare-auth`; and tests covering configuration and contracts.
+**Available today:** Ubuntu Server/Ansible-oriented installation scaffolding; a default bundle with Open WebUI, Ysparr, Apmatia, Redless, Memos, HabitSync, Vikunja, OpenIPE, Sidecaravan shared team memory, and Ladcemas-Lite; published Apmatia starter-agent discovery through Ysparr; documented application and composition contracts; a selectable identity provider (`kanidm`, `external_oidc`, or `none`), with pinned Kanidm service deployment and persisted endpoint settings; identity requirement inspection via `./tools/aggregare-auth`; and tests covering configuration and contracts.
 
 **Administrator supplied:** DNS records, trusted TLS certificates and private keys, and any reverse-proxy/router/firewall configuration needed to reach the selected Kanidm endpoint. Selecting `external_oidc` records the provider choice without installing an external provider. Application OIDC clients and the guided Phase 3 client remain future work.
 
@@ -11,6 +11,25 @@ For a current checkout, review [the Ubuntu Server deployment guide](docs/deploym
 After installation, read the persistent deployment report from any directory with `aggregare report`. The authoritative Markdown report is `/var/lib/aggregare/deployment-report.md`; interactive installs also create `~/Aggregare-Report.md` when available. See the [deployment report guide](docs/deployment/deployment-report.md).
 
 Change the HabitSync local password from your home directory with `cd ~/Aggregare && ./tools/aggregare-habitsync-password`. It prompts without echoing the password, preserves the installer's LAN setting, updates the service, removes the superseded initial login handoff, and refreshes the deployment report without the new password.
+
+### Run a Redless task
+
+Redless is the bounded coding/task execution component. Aggregare installs its
+machine-callable JSONL interface as `redless-machine` at
+`/usr/local/bin/redless-machine`. The root-owned launcher automatically drops
+privileges to the unprivileged `redless` account before starting the worker, so
+primary users do not need—and are not given—a Redless password.
+
+For example, send a capabilities request directly through the installed command:
+
+```sh
+printf '%s\n' '{"type":"capabilities"}' | redless-machine
+```
+
+The command emits JSONL status and result records on standard output. Workspaces,
+run artifacts, and logs are persistent under `/var/lib/redless/` and
+`/var/log/redless/`; the deployment report lists the exact paths and operating
+account. See the [Redless deployment details](docs/deployment/aggregare-server.md#redless).
 
 
 Aggregare composes independently useful applications and infrastructure tools into one coherent platform.
@@ -21,7 +40,7 @@ Aggregare owns the application catalog, presets, installation/configuration comp
 
 ## Install Aggregare on Ubuntu Server
 
-Ready to set up a server? From an Ubuntu Server 26.04 checkout, run `./install.sh` to install the Aggregare default system bundle: AI chat, Memos, HabitSync, Vikunja, and OpenIPE. The installer always requires a TTY for host-time, identity, LAN, and initial model selection prompts. It collects separate chat and coding model endpoints for Ysparr; reruns reuse the saved protected settings. Choose `kanidm`, `external_oidc`, or `none` at the identity prompt. For Kanidm, also provide an administrator-selected identity FQDN, HTTPS origin, and matching certificate chain/private key; the installer checks DNS and TLS before deployment. The endpoint is saved under `/etc/aggregare/identity.json` and reused on reapply. Apmatia's first-user password is generated once and stored root-only in `/etc/aggregare/apmatia-credentials.json`. For unattended Ansible runs, set the Ysparr upstream variables in protected inventory variables. See the [step-by-step installation guide](docs/deployment/aggregare-server.md) for details.
+Ready to set up a server? From an Ubuntu Server 26.04 checkout, run `./install.sh` to install the Aggregare default system bundle: AI chat, Memos, HabitSync, Vikunja, OpenIPE, Sidecaravan, and Ladcemas-Lite. The installer always requires a TTY for host-time, identity, LAN, and initial model selection prompts. It collects separate chat and coding model endpoints for Ysparr; reruns reuse the saved protected settings. Choose `kanidm`, `external_oidc`, or `none` at the identity prompt. For Kanidm, also provide an administrator-selected identity FQDN, HTTPS origin, and matching certificate chain/private key; the installer checks DNS and TLS before deployment. The endpoint is saved under `/etc/aggregare/identity.json` and reused on reapply. Apmatia's first-user password is generated once and stored root-only in `/etc/aggregare/apmatia-credentials.json`. For unattended Ansible runs, set the Ysparr upstream variables in protected inventory variables. See the [step-by-step installation guide](docs/deployment/aggregare-server.md) for details.
 
 The shared contracts and end-to-end examples are in
 [`docs/contracts/phase-1.md`](docs/contracts/phase-1.md). The Phase 2 catalog

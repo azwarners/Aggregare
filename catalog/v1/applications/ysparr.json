@@ -71,6 +71,9 @@
       ]
     }
   ],
+  "cli": [
+    {"name": "ysparr", "path": "/usr/local/bin/ysparr", "description": "Ysparr AI relay and agent publishing CLI."}
+  ],
   "configuration": [
     {
       "name": "ysparr_upstream_base_url",

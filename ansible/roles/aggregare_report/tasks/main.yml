@@ -1,4 +1,8 @@
 ---
+- name: Resolve the report administrator from explicit settings or the connection user
+  ansible.builtin.set_fact:
+    aggregare_report_admin_home_effective: "{{ aggregare_report_admin_home | default(ansible_user_dir | default(''), true) }}"
+
 - name: Ensure the Aggregare report directory is readable
   ansible.builtin.file:
     path: /var/lib/aggregare
@@ -11,8 +15,8 @@
   ansible.builtin.copy:
     content: "# Aggregare deployment report refresh in progress\n\nThis file is not a current report. Rerun the installer or reporting playbook to complete report generation.\n"
     dest: "{{ aggregare_report_path }}"
-    owner: "{{ aggregare_report_admin_uid }}"
-    group: "{{ aggregare_report_admin_gid }}"
+    owner: "{{ aggregare_report_admin_uid | default(ansible_user_uid | default(0), true) }}"
+    group: "{{ aggregare_report_admin_gid | default(ansible_user_gid | default(0), true) }}"
     mode: '0600'
 
 - name: Create report tool and catalog parent directories
@@ -41,6 +45,52 @@
     owner: root
     group: root
     mode: '0755'
+
+- name: Inspect the legacy Apmatia CLI link
+  ansible.builtin.stat:
+    path: /usr/local/bin/apmatia
+    follow: false
+  register: aggregare_apmatia_cli
+
+- name: Restore the Apmatia CLI wrapper after legacy report-link replacement
+  ansible.builtin.copy:
+    dest: /usr/local/bin/apmatia
+    owner: root
+    group: root
+    mode: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      export APMATIA_API_URL="${APMATIA_API_URL:-{{ aggregare_apmatia_api_url }}}"
+      exec "{{ aggregare_apmatia_venv }}/bin/apmatia" "$@"
+  when:
+    - aggregare_apmatia_cli.stat.islnk | default(false)
+    - aggregare_apmatia_cli.stat.lnk_source | default('') == aggregare_apmatia_venv ~ '/bin/apmatia'
+
+- name: Inspect managed CLI entry points
+  ansible.builtin.stat:
+    path: "{{ item.source }}"
+  loop: "{{ aggregare_managed_cli_links }}"
+  register: aggregare_managed_cli_files
+
+- name: Expose installed managed CLI entry points through the system PATH
+  ansible.builtin.file:
+    src: "{{ item.item.source }}"
+    dest: "/usr/local/bin/{{ item.item.name }}"
+    state: link
+    owner: root
+    group: root
+    force: true
+  loop: "{{ aggregare_managed_cli_files.results }}"
+  when: item.stat.exists
+
+- name: Remove unavailable optional CLI entry points from the system PATH
+  ansible.builtin.file:
+    dest: "/usr/local/bin/{{ item.item.name }}"
+    state: absent
+  loop: "{{ aggregare_managed_cli_files.results }}"
+  when: not item.stat.exists
 
 - name: Install the application catalog for report reconstruction
   ansible.builtin.copy:
@@ -82,33 +132,33 @@
   ansible.builtin.file:
     path: "{{ aggregare_report_path }}"
     state: file
-    owner: "{{ aggregare_report_admin_uid }}"
-    group: "{{ aggregare_report_admin_gid }}"
+    owner: "{{ aggregare_report_admin_uid | default(ansible_user_uid | default(0), true) }}"
+    group: "{{ aggregare_report_admin_gid | default(ansible_user_gid | default(0), true) }}"
     mode: '0600'
 
 - name: Inspect the administrator report shortcut
   ansible.builtin.stat:
-    path: "{{ aggregare_report_admin_home }}/Aggregare-Report.md"
+    path: "{{ aggregare_report_admin_home_effective }}/Aggregare-Report.md"
     follow: false
   register: aggregare_report_shortcut
-  when: aggregare_report_admin_home | length > 0
+  when: aggregare_report_admin_home_effective | length > 0
 
 - name: Create the administrator report shortcut when the path is unused or already correct
   ansible.builtin.file:
     src: "{{ aggregare_report_path }}"
-    dest: "{{ aggregare_report_admin_home }}/Aggregare-Report.md"
+    dest: "{{ aggregare_report_admin_home_effective }}/Aggregare-Report.md"
     state: link
-    owner: "{{ aggregare_report_admin_uid }}"
-    group: "{{ aggregare_report_admin_gid }}"
+    owner: "{{ aggregare_report_admin_uid | default(ansible_user_uid | default(0), true) }}"
+    group: "{{ aggregare_report_admin_gid | default(ansible_user_gid | default(0), true) }}"
     force: false
   when:
-    - aggregare_report_admin_home | length > 0
+    - aggregare_report_admin_home_effective | length > 0
     - not aggregare_report_shortcut.stat.exists | default(false) or (aggregare_report_shortcut.stat.islnk | default(false) and aggregare_report_shortcut.stat.lnk_source | default('') == aggregare_report_path)
 
 - name: Explain when an existing home path prevented creation of the report shortcut
   ansible.builtin.debug:
-    msg: "{{ aggregare_report_admin_home }}/Aggregare-Report.md already exists and was left untouched. Read the report with: aggregare report"
+    msg: "{{ aggregare_report_admin_home_effective }}/Aggregare-Report.md already exists and was left untouched. Read the report with: aggregare report"
   when:
-    - aggregare_report_admin_home | length > 0
+    - aggregare_report_admin_home_effective | length > 0
     - aggregare_report_shortcut.stat.exists | default(false)
     - not (aggregare_report_shortcut.stat.islnk | default(false) and aggregare_report_shortcut.stat.lnk_source | default('') == aggregare_report_path)

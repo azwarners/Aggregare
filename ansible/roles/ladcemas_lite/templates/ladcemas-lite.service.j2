@@ -1,0 +1,25 @@
+[Unit]
+Description=Ladcemas-Lite Aggregare launcher
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory={{ ladcemas_source_dir }}
+Environment=AGGREGARE_REPORT_PATH={{ ladcemas_report_path | quote }}
+Environment=LADCEMAS_HOST={{ ladcemas_host | quote }}
+Environment=LADCEMAS_PORT={{ ladcemas_port }}
+ExecStart={{ ladcemas_venv }}/bin/python {{ ladcemas_source_dir }}/app.py
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths={{ ladcemas_report_path }}
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

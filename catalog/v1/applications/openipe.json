@@ -1,7 +1,7 @@
 {
   "id": "openipe",
   "display_name": "OpenIPE",
-  "description": "OpenIPE is part of the default Aggregare productivity operating system. The current role installs and import-verifies its pinned Python package; it does not claim an HTTP service.",
+  "description": "OpenIPE is part of the default Aggregare productivity operating system and runs its REST API as a protected local service.",
   "ownership": "aggregare",
   "category": "productivity",
   "source": {
@@ -19,9 +19,6 @@
     "remove": true,
     "verify": true
   },
-  "unsupported_operations": [
-    "service-management"
-  ],
   "entry_point": "ansible/playbooks/openipe.yml",
   "deployments": [
     {
@@ -56,6 +53,13 @@
   ],
   "conflicts": [],
   "secret_references": [],
+  "services": [
+    {
+      "name": "openipe.service",
+      "ports": [8002],
+      "data_paths": ["/var/lib/aggregare/openipe"]
+    }
+  ],
   "integrations": [
     "memos",
     "vikunja",

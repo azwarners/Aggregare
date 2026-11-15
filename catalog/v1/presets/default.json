@@ -2,9 +2,9 @@
   "id": "default",
   "display_name": "Aggregare default operating system",
   "description": "The default Aggregare system includes the AI chat applications and core productivity applications.",
-  "applications": ["ysparr", "apmatia", "open-webui", "memos", "habitsync", "vikunja", "openipe"],
+  "applications": ["ysparr", "apmatia", "redless", "open-webui", "memos", "habitsync", "vikunja", "openipe", "sidecaravan", "memkeeper", "ladcemas"],
   "entry_point": "ansible/playbooks/default.yml",
-  "application_order": ["ysparr", "apmatia", "open-webui", "memos", "habitsync", "vikunja", "openipe"],
+  "application_order": ["ysparr", "apmatia", "redless", "open-webui", "memos", "habitsync", "vikunja", "openipe", "sidecaravan", "memkeeper", "ladcemas"],
   "dependencies": {
     "open-webui": ["application:ysparr"],
     "habitsync": ["system:podman", "system:openssl", "system:apache2-utils"],
@@ -17,6 +17,7 @@
     "habitsync-image": "ghcr.io/jofoerster/habitsync:0.19.3",
     "vikunja-image": "docker.io/vikunja/vikunja:2.6.0",
     "ysparr-git": "aa2e12f7ee51f9d9d6bb0dc2b17708e7c7b94a98",
+    "redless-git": "16bb8dd2d68582a55394075dfb7fbf5bb2924385",
     "apmatia-git": "bddc27cb369579cc5f912a556aab1612e2034482",
     "openipe-git": "da7842181cca04c05ebbc19cef9cf50759e709b7"
   },
@@ -31,6 +32,8 @@
     "/var/lib/aggregare/memos",
     "/var/lib/aggregare/habitsync",
     "/var/lib/aggregare/vikunja",
+    "/var/lib/aggregare/openipe",
+    "/var/lib/aggregare/sidecaravan",
     "/etc/aggregare/secrets/habitsync-jwt",
     "/etc/aggregare/secrets/habitsync-password",
     "/etc/aggregare/habitsync-credentials"

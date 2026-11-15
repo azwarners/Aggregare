@@ -54,21 +54,41 @@
     "system:python3-venv"
   ],
   "conflicts": [],
+  "services": [],
+  "cli": [
+    {
+      "name": "redless-machine",
+      "path": "/usr/local/bin/redless-machine",
+      "description": "Redless machine-callable JSONL task runner; workers execute as the unprivileged redless account."
+    }
+  ],
   "configuration": [
     {
-      "name": "openai_base_url",
+      "name": "ysparr_coding_base_url",
       "type": "string",
-      "required": true
+      "required": true,
+      "description": "Ysparr coding-target OpenAI-compatible endpoint for the persistent Redless profile."
     },
     {
-      "name": "openai_api_key",
+      "name": "ysparr_coding_model",
       "type": "string",
-      "required": false,
-      "secret_reference": true
+      "required": true,
+      "description": "Explicit Ysparr coding model ID."
     }
   ],
   "secret_references": [],
   "integrations": [
-    "llama.cpp"
-  ]
+    "ysparr-coding-target"
+  ],
+  "authentication": {
+    "methods": ["none"],
+    "bootstrap": {
+      "mode": "none",
+      "idempotent": true,
+      "notes": "The redless Linux account is an unprivileged worker identity, not a human login. No password or SSH credential is generated. Invoke /usr/local/bin/redless-machine; the worker runs as redless."
+    },
+    "manual_steps": [
+      "Submit versioned JSONL task records to redless-machine. Inspect workspaces, run artifacts, and logs using configured primary Aggregare group access."
+    ]
+  }
 }

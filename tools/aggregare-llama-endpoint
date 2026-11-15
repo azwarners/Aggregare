@@ -86,6 +86,14 @@ def probe(base_url: str) -> int:
     if not payload["data"]:
         raise EndpointError(f"GET {endpoint} succeeded but listed no loaded models. Load a model on the llama.cpp server, then retry.")
     print(f"Endpoint verified: GET {endpoint} returned {len(payload['data'])} model(s).")
+    for model in payload["data"]:
+        if (
+            isinstance(model, dict)
+            and isinstance(model.get("id"), str)
+            and model["id"].strip()
+            and not any(character.isspace() for character in model["id"])
+        ):
+            print(f"Model ID: {model['id']}")
     return 0
 
 

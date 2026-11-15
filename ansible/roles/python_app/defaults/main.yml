@@ -8,5 +8,14 @@ python_app_module: ''
 python_app_system_packages: []
 python_app_system_site_packages: false
 python_app_python_command: "import {{ python_app_module }}"
+python_app_pip_packages: []
+python_app_service_enabled: false
+python_app_service_name: "{{ python_app_id }}.service"
+python_app_service_user: root
+python_app_service_group: root
+python_app_service_working_directory: "/opt/aggregare/{{ python_app_id }}"
+python_app_service_exec_start: ""
+python_app_service_environment: {}
+python_app_service_read_write_paths: []
 # Tracked build metadata rewritten by pip during editable installs.
 python_app_generated_source_files: []

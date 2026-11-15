@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export APMATIA_API_URL="${APMATIA_API_URL:-{{ apmatia_api_url }}}"
+exec "{{ apmatia_venv | default('/opt/aggregare/venvs/apmatia') }}/bin/apmatia" "$@"

@@ -42,7 +42,7 @@ Volume={{ volume.host }}:{{ volume.container }}{{ ':' ~ volume.options if volume
 Volume={{ application_data_path }}:{{ application_container_data_path }}
 {% endif %}
 {% for key, value in application_environment | default({}) | dictsort %}
-Environment={{ key }}={{ value }}
+Environment={{ key }}={{ value | quote }}
 {% endfor %}
 {% if application_secret_environment | length > 0 %}
 EnvironmentFile=/etc/aggregare/{{ application_id }}.env

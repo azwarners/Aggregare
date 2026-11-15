@@ -7,10 +7,30 @@
     python_app_source: https://github.com/azwarners/OpenIPE.git
     python_app_ref: main
     python_app_module: openipe
+    python_app_pip_packages:
+      - uvicorn
+    python_app_service_enabled: true
+    python_app_service_name: openipe.service
+    python_app_service_exec_start: >-
+      /opt/aggregare/venvs/openipe/bin/uvicorn openipe.api.app:create_app
+      --factory --host 127.0.0.1 --port 8002
+    python_app_service_environment:
+      OPENIPE_DATABASE_PATH: /var/lib/aggregare/openipe/openipe.sqlite3
+      OPENIPE_API_HOST: 127.0.0.1
+      OPENIPE_API_PORT: '8002'
+    python_app_service_read_write_paths:
+      - /var/lib/aggregare/openipe
     python_app_generated_source_files:
       - src/openipe.egg-info/PKG-INFO
       - src/openipe.egg-info/SOURCES.txt
   tasks:
+  - name: Create OpenIPE data directory
+    ansible.builtin.file:
+      path: /var/lib/aggregare/openipe
+      state: directory
+      owner: root
+      group: root
+      mode: '0750'
   - name: Install OpenIPE from its main branch
     ansible.builtin.import_role:
       name: python_app

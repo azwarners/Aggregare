@@ -1,0 +1,10 @@
+---
+ladcemas_state: present
+ladcemas_source: https://github.com/azwarners/Ladcemas.git
+ladcemas_source_ref: main
+ladcemas_source_dir: /opt/aggregare/ladcemas
+ladcemas_venv: /opt/aggregare/venvs/ladcemas
+ladcemas_host: 127.0.0.1
+ladcemas_port: 5000
+ladcemas_service: ladcemas-lite.service
+ladcemas_report_path: /var/lib/aggregare/deployment-report.md

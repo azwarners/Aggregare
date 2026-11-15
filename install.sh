@@ -24,6 +24,7 @@ CODING_LLM_URL=""
 CODING_MODEL=""
 LAN_ACCESS=""
 LEGACY_RESUME=false
+ROTATE_SIDECARAVAN_TOKEN=false
 
 while (($#)); do
   case "$1" in
@@ -86,8 +87,12 @@ while (($#)); do
       RESET_INSTALL_PROGRESS=true
       shift
       ;;
+    --rotate-sidecaravan-token)
+      ROTATE_SIDECARAVAN_TOKEN=true
+      shift
+      ;;
     --help|-h)
-      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--identity-domain FQDN --identity-origin HTTPS_URL (--kanidm-tls-chain FILE --kanidm-tls-key FILE | --kanidm-development-certificate)] [--identity-ca-file FILE] [--llama-cpp-url URL] [--chat-model ID --coding-llm-url URL --coding-model ID] [--reset-progress]\n'
+      printf 'Usage: ./install.sh [--identity-provider kanidm|external_oidc|none] [--identity-domain FQDN --identity-origin HTTPS_URL (--kanidm-tls-chain FILE --kanidm-tls-key FILE | --kanidm-development-certificate)] [--identity-ca-file FILE] [--llama-cpp-url URL] [--chat-model ID --coding-llm-url URL --coding-model ID] [--reset-progress] [--rotate-sidecaravan-token]\n'
       exit 0
       ;;
     *) printf 'Installer stopped: unknown option: %s\n' "$1" >&2; exit 2 ;;
@@ -102,7 +107,6 @@ fail() {
 install_state_get() {
   sudo python3 - "$INSTALL_STATE_FILE" "$1" <<'PY'
 import json
-import os
 import sys
 
 path, key = sys.argv[1:]
@@ -262,6 +266,7 @@ select_llama_cpp_endpoint() {
   if sudo test -r "$config_file"; then
     saved_url="$(sudo python3 - "$config_file" <<'PY'
 import json
+import os
 import sys
 
 try:
@@ -327,6 +332,38 @@ PY
   install_state_set llama_cpp_url "$LLAMA_CPP_URL" || fail "could not save installer progress to $INSTALL_STATE_FILE."
 }
 
+select_model_from_endpoint() {
+  local endpoint_url="$1" model_kind="$2" model_probe_output="" model_probe_status=0 model_choice="" model_number=""
+  local -a available_models=()
+
+  model_probe_status=0
+  model_probe_output="$("$PROJECT_ROOT/tools/aggregare-llama-endpoint" "$endpoint_url" 2>&1)" || model_probe_status=$?
+  if ((model_probe_status != 0)); then
+    printf '%s\n' "$model_probe_output" >&2
+    fail "could not retrieve ${model_kind} models from the selected OpenAI-compatible endpoint."
+  fi
+  mapfile -t available_models < <(awk '/^Model ID: / { sub(/^Model ID: /, ""); print }' <<<"$model_probe_output")
+  ((${#available_models[@]} > 0)) || fail "the selected ${model_kind} endpoint returned no usable model IDs."
+  if ((${#available_models[@]} == 1)); then
+    SELECTED_MODEL="${available_models[0]}"
+    printf 'Using the only available %s model: %s\n' "$model_kind" "$SELECTED_MODEL"
+    return
+  fi
+
+  printf 'Available %s models:\n' "$model_kind"
+  for model_number in "${!available_models[@]}"; do
+    printf '  %d) %s\n' "$((model_number + 1))" "${available_models[model_number]}"
+  done
+  while true; do
+    read -r -p "Select ${model_kind} model [1-${#available_models[@]}]: " model_choice
+    if [[ "$model_choice" =~ ^[0-9]+$ ]] && ((model_choice >= 1 && model_choice <= ${#available_models[@]})); then
+      SELECTED_MODEL="${available_models[model_choice - 1]}"
+      return
+    fi
+    printf 'Choose a number from 1 to %d.\n' "${#available_models[@]}"
+  done
+}
+
 select_llm_models() {
   local saved_chat="" saved_coding_url="" saved_coding_model="" has_saved_config=false config_file=/etc/aggregare/ysparr-upstream.json
   if sudo test -r "$config_file"; then
@@ -358,8 +395,8 @@ PY
   [[ -t 0 ]] || fail "configure --chat-model, --coding-llm-url, and --coding-model together."
   CHAT_MODEL="${CHAT_MODEL:-$saved_chat}"
   while [[ -z "$CHAT_MODEL" || "$CHAT_MODEL" =~ [[:space:]] ]]; do
-    read -r -p "Chat model ID${CHAT_MODEL:+ [$CHAT_MODEL]}: " candidate
-    CHAT_MODEL="${candidate:-$CHAT_MODEL}"
+    select_model_from_endpoint "$LLAMA_CPP_URL" chat
+    CHAT_MODEL="$SELECTED_MODEL"
   done
   CODING_LLM_URL="${CODING_LLM_URL:-$saved_coding_url}"
   while [[ -z "$CODING_LLM_URL" ]]; do
@@ -367,8 +404,8 @@ PY
   done
   CODING_MODEL="${CODING_MODEL:-$saved_coding_model}"
   while [[ -z "$CODING_MODEL" || "$CODING_MODEL" =~ [[:space:]] ]]; do
-    read -r -p "Coding model ID${CODING_MODEL:+ [$CODING_MODEL]}: " candidate
-    CODING_MODEL="${candidate:-$CODING_MODEL}"
+    select_model_from_endpoint "$CODING_LLM_URL" coding
+    CODING_MODEL="$SELECTED_MODEL"
   done
 }
 
@@ -556,12 +593,14 @@ localhost ansible_connection=local
 EOF
 fi
 
-BOOTSTRAP_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" "$LLAMA_CPP_URL" "$CHAT_MODEL" "$CODING_LLM_URL" "$CODING_MODEL" <<'PY'
+BOOTSTRAP_EXTRA_VARS="$(python3 - "$LAN_ADDRESS" "$IDENTITY_PROVIDER" "$LLAMA_CPP_URL" "$CHAT_MODEL" "$CODING_LLM_URL" "$CODING_MODEL" "$ROTATE_SIDECARAVAN_TOKEN" <<'PY'
 import json
+import os
 import sys
 
 print(json.dumps({
     "application_bind_address": sys.argv[1],
+    "ladcemas_bind_address": sys.argv[1],
     "habitsync_bind_address": sys.argv[1],
     "memos_base_url": f"http://{sys.argv[1]}:5230",
     "habitsync_base_url": f"http://{sys.argv[1]}:6842",
@@ -571,6 +610,8 @@ print(json.dumps({
     "ysparr_chat_model": sys.argv[4],
     "ysparr_coding_base_url": sys.argv[5],
     "ysparr_coding_model": sys.argv[6],
+    "aggregare_primary_users": [os.environ.get("SUDO_USER") or os.environ.get("USER") or "root"],
+    "sidecaravan_rotate_token": sys.argv[7] == "true",
     "ansible_become": False,
 }))
 PY
@@ -819,6 +860,10 @@ import sys
 separator = sys.argv.index("--")
 failed = sys.argv[1:separator]
 expected = [name.removesuffix(".yml") for name in sys.argv[separator + 1:]]
+# Memkeeper is installed by Sidecaravan's playbook, but it is a separate
+# catalog application and must remain visible in the deployment inventory.
+if "sidecaravan" in expected and "memkeeper" not in expected:
+    expected.insert(expected.index("sidecaravan") + 1, "memkeeper")
 print(json.dumps({
     "aggregare_report_failed_applications": failed,
     "aggregare_report_expected_applications": expected,
