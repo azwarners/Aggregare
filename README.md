@@ -12,11 +12,7 @@ After installation, read the persistent deployment report from any directory wit
 
 Change the HabitSync local password from your home directory with `cd ~/Aggregare && ./tools/aggregare-habitsync-password`. It prompts without echoing the password, preserves the installer's LAN setting, updates the service, removes the superseded initial login handoff, and refreshes the deployment report without the new password.
 
-### Run a Redless task
-
-See the [Redless task guide](docs/deployment/redless-task.md) for the
-machine-callable interface, examples, and persistent artifact paths.
-
+For Redless task execution, see the [Redless task guide](docs/deployment/redless-task.md).
 
 Aggregare composes independently useful applications and infrastructure tools into one coherent platform.
 
