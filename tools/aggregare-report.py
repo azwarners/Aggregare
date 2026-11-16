@@ -193,6 +193,7 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
             lines.append("- Service metadata is unavailable for this application")
         redless_operator_cli_installed = False
         redless_operator_cli_path = ""
+        aggregare_models_cli_installed = False
         for cli in entry.get("cli", []):
             if not isinstance(cli, dict):
                 continue
@@ -210,6 +211,13 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
             if app_id == "redless" and cli_name == "aggregare-redless-task":
                 redless_operator_cli_installed = installed
                 redless_operator_cli_path = cli_path
+            if app_id == "ysparr" and cli_name == "aggregare-models":
+                aggregare_models_cli_installed = installed
+        if app_id == "ysparr" and aggregare_models_cli_installed:
+            lines.extend([
+                "- Model management: `sudo aggregare-models status` shows saved selections, live endpoint probes, and effective Ysparr/Redless runtime state.",
+                "- Change one role with `sudo aggregare-models set chat --url URL --model ID` or `sudo aggregare-models set coding --url URL --model ID`; validated changes update Ysparr and the Redless coding profile when installed, with rollback on failure.",
+            ])
         deployment = status.get("deployment", {}) if isinstance(status, dict) else {}
         if isinstance(deployment, dict):
             account = deployment.get("account")

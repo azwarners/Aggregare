@@ -69,6 +69,18 @@ class DeploymentReportTests(unittest.TestCase):
         content = self.render()
         self.assertIn(f"CLI: `enabled-cli` at `{sys.executable}` (installed) — Test CLI", content)
 
+    def test_report_lists_model_management_procedure_when_ysparr_cli_is_installed(self):
+        entry = {
+            "id": "ysparr", "display_name": "Ysparr", "services": [],
+            "cli": [{"name": "aggregare-models", "path": sys.executable}],
+        }
+        (self.catalog / "index.json").write_text(json.dumps({"applications": [{"id": "ysparr", "path": "applications/ysparr.json"}]}))
+        (self.apps / "ysparr.json").write_text(json.dumps(entry))
+        (self.statuses / "ysparr.json").write_text(json.dumps({"application_id": "ysparr", "state": "running"}))
+        content = self.render()
+        self.assertIn("sudo aggregare-models status", content)
+        self.assertIn("validat", content)
+
     def test_report_lists_worker_account_and_persistent_paths_without_credentials(self):
         self.statuses.joinpath("enabled.json").write_text(json.dumps({
             "application_id": "enabled", "state": "running",

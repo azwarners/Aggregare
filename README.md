@@ -14,6 +14,14 @@ Change the HabitSync local password from your home directory with `cd ~/Aggregar
 
 For Redless task execution, see the [Redless task guide](docs/deployment/redless-task.md).
 
+After Ysparr is installed, use `sudo aggregare-models status` to inspect saved
+chat/coding selections, live endpoint probes, and effective runtime state. Use
+`sudo aggregare-models set chat --url URL --model ID` or the corresponding
+`coding` command to make a validated change; the command updates Ysparr and the
+installed Redless coding profile atomically and rolls back on failure. See the
+[deployment guide](docs/deployment/aggregare-server.md) for same-model mode and
+the complete operator procedure.
+
 Aggregare composes independently useful applications and infrastructure tools into one coherent platform.
 
 Ubuntu is the initial reference host platform, and Ansible is the initial/default configuration engine for that implementation. Aggregare is not defined as an operating system, Linux distribution, custom kernel, or custom ISO. Its application and composition contracts should avoid unnecessary platform coupling so additional host platforms or deployment backends can be added later when there is a concrete need.

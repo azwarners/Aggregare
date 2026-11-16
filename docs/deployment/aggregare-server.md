@@ -355,7 +355,9 @@ selected model, preserve unrelated settings, atomically update
 previous file if the service does not become active. The `use-chat-for-coding`
 command intentionally supports the same endpoint and model ID for both roles;
 `use-coding-for-chat` is also available. Model selection does not download or
-start weights: the selected endpoint must already serve the model. Read-only
+start weights: the selected endpoint must already serve the model. With the
+current Ysparr integration, direct requests using a shared model ID use the
+chat endpoint; explicit coding-target requests use the coding endpoint. Read-only
 status can run as a normal user when the protected file is readable; changes
 normally require `sudo`.
 

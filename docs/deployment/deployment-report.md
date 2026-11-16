@@ -26,6 +26,8 @@ redacted saved-versus-live model checks, or `sudo aggregare-models set chat|codi
 --url URL --model ID` for a validated selection change. The command preserves
 unrelated protected settings, restarts Ysparr, and rolls back if activation
 fails; `use-chat-for-coding` supports intentional same-model operation.
+For a shared ID, direct Ysparr requests use chat and explicit coding-target
+requests use coding; the managed Ysparr revision must include that routing fix.
 
 The HabitSync section includes the password-change command. From your home directory, run `cd ~/Aggregare && ./tools/aggregare-habitsync-password`; it prompts twice without echoing the password, applies the new login while preserving the installer's saved LAN access and base URL, removes the superseded initial login handoff, and refreshes this report without recording the new password.
 

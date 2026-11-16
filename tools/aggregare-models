@@ -10,15 +10,19 @@ import http.client
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
 
 DEFAULT_CONFIG = Path("/etc/aggregare/ysparr-upstream.json")
+DEFAULT_ENV = Path("/etc/aggregare/ysparr.env")
+DEFAULT_REDLESS_PROFILE = Path("/var/lib/redless/.config/slow_local.yaml")
 DEFAULT_SERVICE = "ysparr.service"
 DEFAULT_TIMEOUT = 8
 
@@ -45,6 +49,14 @@ def config_path() -> Path:
 
 def service_name() -> str:
     return os.environ.get("AGGREGARE_YSPARR_SERVICE", DEFAULT_SERVICE)
+
+
+def runtime_env_path() -> Path:
+    return Path(os.environ.get("AGGREGARE_YSPARR_ENV", str(DEFAULT_ENV)))
+
+
+def redless_profile_path() -> Path:
+    return Path(os.environ.get("AGGREGARE_REDLESS_PROFILE", str(DEFAULT_REDLESS_PROFILE)))
 
 
 def normalize_url(value: str) -> str:
@@ -145,6 +157,132 @@ def saved_role(config: dict, role: str) -> tuple[str, str]:
     return str(coding_url), str(coding_model)
 
 
+def read_text_file(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError as error:
+        raise ModelToolError(f"runtime file is not installed: {path}") from error
+    except PermissionError as error:
+        raise ModelToolError(f"cannot read protected runtime file: {path}") from error
+    except OSError as error:
+        raise ModelToolError(f"cannot read runtime file: {path}") from error
+
+
+def parse_env_file(content: str) -> dict[str, object]:
+    values: dict[str, object] = {}
+    for line in content.splitlines():
+        if not line or line.lstrip().startswith("#") or "=" not in line:
+            continue
+        key, raw_value = line.split("=", 1)
+        try:
+            values[key] = json.loads(raw_value)
+        except json.JSONDecodeError:
+            values[key] = raw_value
+    return values
+
+
+def env_value(content: str, key: str) -> object:
+    return parse_env_file(content).get(key)
+
+
+def replace_env_values(content: str, updates: dict[str, object]) -> str:
+    lines = content.splitlines(keepends=True)
+    found: set[str] = set()
+    rendered = {key: json.dumps(value, ensure_ascii=False) for key, value in updates.items()}
+    output: list[str] = []
+    for line in lines:
+        match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=", line)
+        key = match.group(1) if match else ""
+        if key in rendered:
+            newline = "\n" if line.endswith("\n") else ""
+            output.append(f"{key}={rendered[key]}{newline}")
+            found.add(key)
+        else:
+            output.append(line)
+    suffix = "" if not output or output[-1].endswith("\n") else "\n"
+    for key, value in rendered.items():
+        if key not in found:
+            output.append(f"{key}={value}\n")
+    return "".join(output) if not suffix else "".join(output) + suffix
+
+
+def profile_values(content: str) -> tuple[str, str]:
+    api_matches = re.findall(r"^\s+api_base:\s+(.+?)\s*$", content, flags=re.MULTILINE)
+    model_matches = re.findall(r"^\s+model_name:\s+(.+?)\s*$", content, flags=re.MULTILINE)
+    if len(api_matches) != 1 or len(model_matches) != 1:
+        raise ModelToolError("Redless coding profile is missing its single model endpoint or model ID")
+    try:
+        api_base = json.loads(api_matches[0])
+        model = json.loads(model_matches[0])
+    except json.JSONDecodeError as error:
+        raise ModelToolError("Redless coding profile contains an invalid model value") from error
+    if not isinstance(api_base, str) or not isinstance(model, str):
+        raise ModelToolError("Redless coding profile contains invalid model values")
+    return api_base, model
+
+
+def replace_profile_values(content: str, api_base: str, model: str) -> str:
+    replacements = {
+        "api_base": json.dumps(api_base),
+        "model_name": json.dumps(model),
+    }
+    result = content
+    for key, value in replacements.items():
+        result, count = re.subn(
+            rf"^(\s+{key}:\s+).*$",
+            rf"\g<1>{value}",
+            result,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if count != 1:
+            raise ModelToolError(f"Redless coding profile is missing {key}")
+    return result
+
+
+def runtime_snapshot(path: Path) -> tuple[bytes, os.stat_result] | None:
+    try:
+        return path.read_bytes(), path.stat()
+    except FileNotFoundError:
+        return None
+
+
+def runtime_state(config: dict, *, env_path: Path, profile_path: Path) -> dict[str, object]:
+    desired_chat_url, desired_chat_model = saved_role(config, "chat")
+    desired_coding_url, desired_coding_model = saved_role(config, "coding")
+    state: dict[str, object] = {"env_path": str(env_path), "redless_profile_path": str(profile_path)}
+    try:
+        env_content = read_text_file(env_path)
+        env = parse_env_file(env_content)
+        route_map = env.get("YSPARR_MODEL_TYPE_ROUTES")
+        chat_matches = (
+            env.get("YSPARR_UPSTREAM_BASE_URL") == normalize_url(desired_chat_url)
+            and env.get("YSPARR_CHAT_MODEL") == desired_chat_model
+            and isinstance(route_map, dict)
+            and route_map.get("openai_compatible") == desired_chat_model
+        )
+        coding_matches = (
+            env.get("YSPARR_CODING_BASE_URL") == normalize_url(desired_coding_url)
+            and env.get("YSPARR_CODING_MODEL") == desired_coding_model
+        )
+        state["ysparr"] = {"readable": True, "chat_matches": chat_matches, "coding_matches": coding_matches}
+    except ModelToolError as error:
+        state["ysparr"] = {"readable": False, "error": str(error)}
+    try:
+        profile_content = read_text_file(profile_path)
+        profile_url, profile_model = profile_values(profile_content)
+        state["redless"] = {
+            "installed": True,
+            "coding_matches": profile_url == normalize_url(desired_coding_url).rstrip("/") + "/v1" and profile_model == desired_coding_model,
+        }
+    except ModelToolError as error:
+        if "not installed" in str(error):
+            state["redless"] = {"installed": False, "coding_matches": None}
+        else:
+            state["redless"] = {"installed": True, "coding_matches": False, "error": str(error)}
+    return state
+
+
 def display_url(value: str) -> str:
     try:
         return normalize_url(value)
@@ -174,6 +312,7 @@ def status(path: Path, json_output: bool = False) -> int:
         else:
             current.update({"reachable": False, "http_status": None, "model_advertised": False, "error": "not configured"})
         result["roles"][role] = current
+    result["runtime"] = runtime_state(config, env_path=runtime_env_path(), profile_path=redless_profile_path())
     if json_output:
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
@@ -185,6 +324,17 @@ def status(path: Path, json_output: bool = False) -> int:
         detail = current["error"] or f"HTTP {current['http_status']}"
         print(f"{role.title()}: saved URL {current['url']}; saved model {current['model']}")
         print(f"  live endpoint: {reachability} ({detail}); model advertised: {advertised}")
+    runtime = result["runtime"]
+    ysparr = runtime["ysparr"]
+    if ysparr.get("readable"):
+        print(f"Ysparr runtime: chat {'matches' if ysparr['chat_matches'] else 'does not match'} saved configuration; coding {'matches' if ysparr['coding_matches'] else 'does not match'} saved configuration")
+    else:
+        print(f"Ysparr runtime: not verified ({ysparr['error']})")
+    redless = runtime["redless"]
+    if not redless["installed"]:
+        print("Redless coding profile: not installed")
+    else:
+        print(f"Redless coding profile: {'matches' if redless['coding_matches'] else 'does not match'} saved coding configuration")
     return 0
 
 
@@ -236,10 +386,43 @@ def atomic_write(path: Path, data: dict | bytes, metadata: os.stat_result) -> No
 def restart_service() -> tuple[bool, str]:
     try:
         subprocess.run(["systemctl", "restart", service_name()], check=True, capture_output=True, text=True, timeout=30)
-        subprocess.run(["systemctl", "is-active", "--quiet", service_name()], check=True, timeout=10)
-        return True, "service active"
+        env = parse_env_file(read_text_file(runtime_env_path()))
+        host = str(env.get("YSPARR_HOST", "127.0.0.1"))
+        port = int(env.get("YSPARR_PORT", 8000))
+        stable_checks = 0
+        for _ in range(12):
+            active = subprocess.run(
+                ["systemctl", "is-active", "--quiet", service_name()],
+                check=False,
+                timeout=10,
+            ).returncode == 0
+            healthy = False
+            if active:
+                try:
+                    connection = http.client.HTTPConnection(host, port, timeout=2)
+                    try:
+                        connection.request("GET", "/health")
+                        healthy = connection.getresponse().status == 200
+                    finally:
+                        connection.close()
+                except (OSError, TimeoutError, ValueError):
+                    healthy = False
+            if active and healthy:
+                stable_checks += 1
+                if stable_checks >= 2:
+                    return True, "service active and healthy"
+            else:
+                stable_checks = 0
+            time.sleep(0.5)
+        return False, "service did not remain active and healthy"
     except (OSError, subprocess.SubprocessError):
         return False, "service reload failed"
+
+
+def rollback_files(snapshots: dict[Path, tuple[bytes, os.stat_result] | None]) -> None:
+    for path, snapshot in snapshots.items():
+        if snapshot is not None:
+            atomic_write(path, snapshot[0], snapshot[1])
 
 
 def set_role(role: str, url: str, model: str, path: Path) -> int:
@@ -256,8 +439,15 @@ def set_role(role: str, url: str, model: str, path: Path) -> int:
             if normalized_model not in check.model_ids:
                 raise ModelToolError(f"model {normalized_model!r} is not advertised by the endpoint; configuration was not changed")
             before = dict(config)
-            before_bytes = path.read_bytes()
-            metadata = path.stat()
+            snapshots = {
+                path: runtime_snapshot(path),
+                runtime_env_path(): runtime_snapshot(runtime_env_path()),
+                redless_profile_path(): runtime_snapshot(redless_profile_path()),
+            }
+            if snapshots[path] is None:
+                raise ModelToolError("saved configuration disappeared before it could be changed")
+            if snapshots[runtime_env_path()] is None:
+                raise ModelToolError(f"Ysparr runtime environment is not installed at {runtime_env_path()}; configuration was not changed")
             if role == "chat":
                 config["ysparr_upstream_base_url"] = normalized_url
                 config["ysparr_chat_model"] = normalized_model
@@ -267,13 +457,66 @@ def set_role(role: str, url: str, model: str, path: Path) -> int:
             if config == before:
                 print(f"{role.title()} selection already matches; no changes made.")
                 return 0
-            atomic_write(path, config, metadata)
-            active, detail = restart_service()
-            if not active:
-                atomic_write(path, before_bytes, metadata)
-                restart_service()
-                raise ModelToolError(f"{detail}; restored the previous configuration")
+            try:
+                env_path = runtime_env_path()
+                env_content = snapshots[env_path][0].decode("utf-8")
+                env_updates: dict[str, object]
+                if role == "chat":
+                    route_map = env_value(env_content, "YSPARR_MODEL_TYPE_ROUTES")
+                    if not isinstance(route_map, dict):
+                        route_map = {}
+                    route_map = dict(route_map)
+                    route_map["openai_compatible"] = normalized_model
+                    env_updates = {
+                        "YSPARR_UPSTREAM_BASE_URL": normalized_url,
+                        "YSPARR_CHAT_MODEL": normalized_model,
+                        "YSPARR_MODEL_TYPE_ROUTES": route_map,
+                    }
+                else:
+                    env_updates = {
+                        "YSPARR_CODING_BASE_URL": normalized_url,
+                        "YSPARR_CODING_MODEL": normalized_model,
+                    }
+                updated_env = replace_env_values(env_content, env_updates).encode("utf-8")
+                atomic_write(path, config, snapshots[path][1])
+                atomic_write(env_path, updated_env, snapshots[env_path][1])
+                profile_path = redless_profile_path()
+                if role == "coding" and snapshots[profile_path] is not None:
+                    profile_content = snapshots[profile_path][0].decode("utf-8")
+                    updated_profile = replace_profile_values(
+                        profile_content,
+                        normalized_url.rstrip("/") + "/v1",
+                        normalized_model,
+                    ).encode("utf-8")
+                    atomic_write(profile_path, updated_profile, snapshots[profile_path][1])
+                runtime = runtime_state(config, env_path=env_path, profile_path=profile_path)
+                ysparr = runtime["ysparr"]
+                redless = runtime["redless"]
+                if not ysparr.get("readable") or not ysparr.get(f"{role}_matches"):
+                    raise ModelToolError("updated Ysparr runtime does not match the requested selection")
+                if role == "coding" and redless.get("installed") and not redless.get("coding_matches"):
+                    raise ModelToolError("updated Redless coding profile does not match the requested selection")
+                active, detail = restart_service()
+                if not active:
+                    raise ModelToolError(detail)
+                runtime = runtime_state(config, env_path=env_path, profile_path=profile_path)
+                if not runtime["ysparr"].get(f"{role}_matches"):
+                    raise ModelToolError("restarted Ysparr runtime does not match the requested selection")
+            except Exception as error:
+                rollback_error = ""
+                try:
+                    rollback_files(snapshots)
+                    restored, restore_detail = restart_service()
+                    if not restored:
+                        rollback_error = f"; rollback service restart failed ({restore_detail})"
+                except Exception as restore_error:
+                    rollback_error = f"; rollback failed ({restore_error})"
+                if isinstance(error, ModelToolError):
+                    raise ModelToolError(f"{error}; restored the previous configuration and runtime{rollback_error}") from error
+                raise ModelToolError(f"runtime update failed; restored the previous configuration and runtime{rollback_error}") from error
             print(f"Applied {role} URL {normalized_url} and model {normalized_model}; {detail}.")
+            if role == "coding" and snapshots[redless_profile_path()] is not None:
+                print("Updated the Redless coding profile used by new tasks.")
             print("Model selection changes do not download or start model weights; the endpoint must already serve the model.")
             return 0
     except ModelToolError as error:
