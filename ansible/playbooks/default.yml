@@ -4,6 +4,7 @@
 - import_playbook: ysparr.yml
 - import_playbook: sidecaravan.yml
 - import_playbook: apmatia.yml
+- import_playbook: redless.yml
 - import_playbook: open-webui.yml
 - import_playbook: memos.yml
 - import_playbook: habitsync.yml

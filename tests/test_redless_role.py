@@ -7,8 +7,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_redless_is_a_pinned_default_bundle_component():
     playbook = (ROOT / "ansible/playbooks/redless.yml").read_text()
+    default_playbook = (ROOT / "ansible/playbooks/default.yml").read_text()
     preset = json.loads((ROOT / "catalog/v1/presets/default.json").read_text())
     assert "- redless" in playbook
+    assert "- import_playbook: redless.yml" in default_playbook
     assert "redless" in preset["applications"]
     assert "16bb8dd2d68582a55394075dfb7fbf5bb2924385" in playbook
     assert "redless_live_smoke: true" not in playbook
