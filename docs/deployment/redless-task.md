@@ -18,6 +18,14 @@ sudo -u redless -- /usr/local/bin/aggregare-redless-task run \
   --task "Say hello and explain what Redless does"
 ```
 
+The shorter `aggRedless` command is installed in the same system `PATH` as an
+alias for this command:
+
+```sh
+sudo -u redless -- aggRedless run \
+  --task "Say hello and explain what Redless does"
+```
+
 The command must run as the unprivileged `redless` worker. A successful Redless
 result exits 0; failed or cancelled results, malformed or missing terminal
 output, missing configuration, and local timeouts exit nonzero. Use

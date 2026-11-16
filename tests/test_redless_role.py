@@ -72,6 +72,7 @@ def test_redless_catalog_declares_cli_and_no_human_credentials():
     entry = json.loads((ROOT / "catalog/v1/applications/redless.json").read_text())
     assert entry["cli"][0]["path"] == "/opt/aggregare/venvs/redless/bin/redless-machine"
     assert any(cli["path"] == "/usr/local/bin/aggregare-redless-task" for cli in entry["cli"])
+    assert any(cli["path"] == "/usr/local/bin/aggRedless" for cli in entry["cli"])
     assert entry["authentication"]["bootstrap"]["mode"] == "none"
     assert "password" not in entry["configuration"]
 

@@ -29,6 +29,7 @@
         - /etc/systemd/system/redless.service
         - /usr/local/bin/redless-machine
         - /usr/local/bin/aggregare-redless-task
+        - /usr/local/bin/aggRedless
         - /usr/local/lib/aggregare/aggregare_redless_task.py
         - /usr/local/lib/aggregare/redless_task_adapter.py
     - name: Remove the Redless deployment status record
@@ -337,6 +338,25 @@
         owner: root
         group: root
         mode: '0755'
+
+    - name: Install the short Redless task CLI alias
+      ansible.builtin.file:
+        src: /usr/local/bin/aggregare-redless-task
+        dest: /usr/local/bin/aggRedless
+        state: link
+        owner: root
+        group: root
+
+    - name: Verify the short Redless task CLI alias as the unprivileged worker
+      ansible.builtin.command:
+        argv: [/usr/local/bin/aggRedless, --help]
+      become_user: "{{ redless_user }}"
+      environment:
+        HOME: "{{ redless_home }}"
+        MSWEA_CONFIG_DIR: "{{ redless_config_path }}"
+      register: agg_redless_help
+      changed_when: false
+      failed_when: agg_redless_help.rc != 0
 
     - name: Verify the installed Redless machine help as the unprivileged worker
       ansible.builtin.command:

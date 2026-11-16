@@ -70,6 +70,11 @@
       "name": "aggregare-redless-task",
       "path": "/usr/local/bin/aggregare-redless-task",
       "description": "Aggregare one-shot task command; run as the unprivileged redless worker."
+    },
+    {
+      "name": "aggRedless",
+      "path": "/usr/local/bin/aggRedless",
+      "description": "Short alias for the Aggregare one-shot task command."
     }
   ],
   "configuration": [
