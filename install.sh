@@ -766,11 +766,12 @@ APPLICATION_FAILURES=()
     [[ -f "playbooks/$APPLICATION_PLAYBOOK" ]] || fail "default.yml imports a missing playbook: $APPLICATION_PLAYBOOK."
     APPLICATION_ID="${APPLICATION_PLAYBOOK%.yml}"
     case "$APPLICATION_ID" in
-      ysparr) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "ysparr_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/ysparr/defaults/main.yml")" ;;
-      apmatia) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "apmatia_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/apmatia/defaults/main.yml")" ;;
-      openipe) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "python_app_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "playbooks/$APPLICATION_PLAYBOOK")" ;;
-      sidecaravan) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "sidecaravan_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/sidecaravan_memory/defaults/main.yml")" ;;
-      *) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "application_version" {gsub(/[ '\''\"]/, "", $2); print $2; exit}' "playbooks/$APPLICATION_PLAYBOOK")" ;;
+      ysparr) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "ysparr_version" {gsub(/[ '\''"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/ysparr/defaults/main.yml")" ;;
+      apmatia) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "apmatia_version" {gsub(/[ '\''"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/apmatia/defaults/main.yml")" ;;
+      openipe) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "python_app_version" {gsub(/[ '\''"]/, "", $2); print $2; exit}' "playbooks/$APPLICATION_PLAYBOOK")" ;;
+      sidecaravan) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "sidecaravan_version" {gsub(/[ '\''"]/, "", $2); print $2; exit}' "$ANSIBLE_DIR/roles/sidecaravan_memory/defaults/main.yml")" ;;
+      redless) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "redless_version" {gsub(/[ '\''"]/, "", $2); print $2; exit}' "playbooks/$APPLICATION_PLAYBOOK")" ;;
+      *) APPLICATION_EXPECTED_VERSION="$(awk -F': ' '{key=$1; gsub(/^[ \t]+|[ \t]+$/, "", key)} key == "application_version" {gsub(/[ '\''"]/, "", $2); print $2; exit}' "playbooks/$APPLICATION_PLAYBOOK")" ;;
     esac
     [[ -n "$APPLICATION_EXPECTED_VERSION" ]] || fail "could not determine the expected version for $APPLICATION_ID."
     APPLICATION_SIGNATURE="v2:$(python3 - "$ANSIBLE_DIR" "$APPLICATION_PLAYBOOK" "$AGGREGARE_VERSION" "$BOOTSTRAP_EXTRA_VARS" "$APPLICATION_ID" <<'PY'

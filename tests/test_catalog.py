@@ -74,6 +74,12 @@ class CatalogContractTests(unittest.TestCase):
         default_playbook = (ROOT / "ansible/playbooks/default.yml").read_text()
         self.assertNotIn("troubleshell.yml", default_playbook)
 
+    def test_installer_extracts_the_redless_playbook_version(self):
+        installer = (ROOT / "install.sh").read_text()
+        self.assertIn('redless) APPLICATION_EXPECTED_VERSION=', installer)
+        self.assertIn('key == "redless_version"', installer)
+        self.assertNotIn(r"\\\"]/,", installer)
+
     def test_open_webui_is_chat_only_by_default(self):
         open_webui = yaml.safe_load((ROOT / "ansible/playbooks/open-webui.yml").read_text())
         environment = open_webui[0]["vars"]["application_environment"]
