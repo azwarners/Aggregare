@@ -808,6 +808,11 @@ while pending:
 for directory in (os.path.join(root, "group_vars"),):
     for base, _, names in os.walk(directory):
         files.update(os.path.join(base, name) for name in names)
+# Some roles install controller-local tools from outside their role directory.
+# Include those sources in the application signature so a tool-only change
+# cannot be incorrectly skipped as an already-completed application.
+if application_id == "ysparr":
+    files.add(os.path.join(root, "..", "tools", "aggregare-models"))
 digest = hashlib.sha256()
 digest.update(version.encode())
 digest.update(extra_vars.encode())
