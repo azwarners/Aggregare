@@ -305,6 +305,9 @@ from the Aggregare host before installing the bundle. If that endpoint returns
 one model, the installer selects it automatically for chat. If it returns
 multiple models, the installer displays them as a numbered list for selection.
 The same automatic selection or numbered list is used for the coding endpoint.
+When a saved coding model is no longer advertised at its configured endpoint,
+reapplying the installer automatically selects the first currently available
+coding model; pass `--coding-model ID` when a specific model is required.
 The installer also collects the coding endpoint URL. The chat endpoint
 continues to serve Open WebUI chats and Apmatia agents. Ysparr lists the
 configured coding model as a separate selectable model; requests using that

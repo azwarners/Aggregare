@@ -138,6 +138,11 @@ class CatalogContractTests(unittest.TestCase):
         self.assertIn("Select the first available chat model when the saved selection is stale", ysparr_tasks)
         self.assertIn("ysparr_upstream_models_probe.json.data[0].id", ysparr_tasks)
 
+    def test_ysparr_can_follow_the_current_coding_model(self):
+        ysparr_tasks = (ROOT / "ansible/roles/ysparr/tasks/main.yml").read_text()
+        self.assertIn("Select the first available coding model when the saved selection is stale", ysparr_tasks)
+        self.assertIn("ysparr_coding_models_probe.json.data[0].id", ysparr_tasks)
+
     def test_ysparr_routes_extension_model_types_to_the_selected_chat_model(self):
         defaults = (ROOT / "ansible/roles/ysparr/defaults/main.yml").read_text()
         tasks = (ROOT / "ansible/roles/ysparr/tasks/main.yml").read_text()

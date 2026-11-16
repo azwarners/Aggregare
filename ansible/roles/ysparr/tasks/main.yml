@@ -194,14 +194,33 @@
       until: ysparr_coding_models_probe.status | default(0) | int in [200, 401, 403, 404]
       when: ysparr_coding_base_url_normalized | length > 0
 
-    - name: Require the coding model to be available at its configured endpoint
+    - name: Require a reachable coding models endpoint
       ansible.builtin.assert:
         that:
           - ysparr_coding_models_probe.status | default(0) | int == 200
           - (ysparr_coding_models_probe.json | default({})).data | default([]) is sequence
           - (ysparr_coding_models_probe.json | default({})).data | default([]) is not string
+          - (ysparr_coding_models_probe.json | default({})).data | default([]) | length > 0
+        fail_msg: The coding endpoint must be reachable and return at least one model from /v1/models.
+      when: ysparr_coding_base_url_normalized | length > 0
+
+    - name: Select the first available coding model when the saved selection is stale
+      ansible.builtin.set_fact:
+        ysparr_coding_model_effective: >-
+          {{ ysparr_coding_models_probe.json.data[0].id
+             if ysparr_coding_model_effective not in (ysparr_coding_models_probe.json.data | map(attribute='id') | list)
+             else ysparr_coding_model_effective }}
+      no_log: true
+      when:
+        - ysparr_coding_base_url_normalized | length > 0
+        - ysparr_coding_models_probe.status | default(0) | int == 200
+        - (ysparr_coding_models_probe.json | default({})).data | default([]) | length > 0
+
+    - name: Require the selected coding model to be available
+      ansible.builtin.assert:
+        that:
           - ysparr_coding_model_effective in ((ysparr_coding_models_probe.json | default({})).data | default([]) | map(attribute='id') | list)
-        fail_msg: The coding endpoint must be reachable and return the configured model ID from /v1/models.
+        fail_msg: The coding endpoint must be reachable and return a usable model from /v1/models.
       when: ysparr_coding_base_url_normalized | length > 0
 
     - name: Check the configured upstream models endpoint
