@@ -3,15 +3,22 @@ set -eu
 
 case "${1:-}" in
   report)
-    [ "$#" -eq 1 ] || { echo "Usage: aggregare report | summary" >&2; exit 2; }
+    [ "$#" -eq 1 ] || { echo "Usage: aggregare report | summary | models ..." >&2; exit 2; }
     action=report
     ;;
   summary)
-    [ "$#" -eq 1 ] || { echo "Usage: aggregare report | summary" >&2; exit 2; }
+    [ "$#" -eq 1 ] || { echo "Usage: aggregare report | summary | models ..." >&2; exit 2; }
     action=summary
     ;;
+  models)
+    shift
+    script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+    model_tool=/usr/local/lib/aggregare/aggregare-models
+    [ -r "$model_tool" ] || model_tool="$script_dir/aggregare-models"
+    exec python3 "$model_tool" "$@"
+    ;;
   *)
-    echo "Usage: aggregare report | summary" >&2
+    echo "Usage: aggregare report | summary | models ..." >&2
     exit 2
     ;;
 esac

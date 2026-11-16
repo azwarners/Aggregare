@@ -50,7 +50,7 @@
         - /opt/aggregare/ysparr
         - /opt/aggregare/venvs/ysparr
         - /usr/local/bin/ysparr
-        - /usr/local/bin/aggregare-models
+        - /usr/local/lib/aggregare/aggregare-models
 
     - name: Remove Ysparr catalog status
       ansible.builtin.file:
@@ -88,6 +88,7 @@
       loop:
         - { path: /opt/aggregare, owner: root, group: root, mode: '0755' }
         - { path: /opt/aggregare/venvs, owner: root, group: root, mode: '0755' }
+        - { path: /usr/local/lib/aggregare, owner: root, group: root, mode: '0755' }
         - { path: /var/lib/aggregare, owner: root, group: root, mode: '0755' }
         - { path: /var/lib/ysparr, owner: ysparr, group: ysparr, mode: '0750' }
         - { path: /var/lib/aggregare/status, owner: root, group: root, mode: '0755' }
@@ -357,10 +358,15 @@
     - name: Install the Aggregare model operator CLI
       ansible.builtin.copy:
         src: "{{ role_path }}/../../../tools/aggregare-models"
-        dest: /usr/local/bin/aggregare-models
+        dest: /usr/local/lib/aggregare/aggregare-models
         owner: root
         group: root
         mode: '0755'
+
+    - name: Remove the obsolete standalone model CLI
+      ansible.builtin.file:
+        path: /usr/local/bin/aggregare-models
+        state: absent
 
     - name: Write Ysparr environment configuration
       ansible.builtin.template:

@@ -528,7 +528,7 @@ def set_role(role: str, url: str, model: str, path: Path) -> int:
 
 
 def parser() -> argparse.ArgumentParser:
-    command = argparse.ArgumentParser(prog="aggregare-models", description="Inspect and change Aggregare Ysparr chat/coding model selections.")
+    command = argparse.ArgumentParser(prog="aggregare models", description="Inspect and change Aggregare Ysparr chat/coding model selections.")
     command.add_argument("--json", action="store_true", dest="json_output", help="status output as JSON (never includes API keys)")
     subcommands = command.add_subparsers(dest="command", required=True)
     status_command = subcommands.add_parser("status", help="show saved selections and live endpoint probes")

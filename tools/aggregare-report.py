@@ -211,12 +211,12 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
             if app_id == "redless" and cli_name == "aggregare-redless-task":
                 redless_operator_cli_installed = installed
                 redless_operator_cli_path = cli_path
-            if app_id == "ysparr" and cli_name == "aggregare-models":
+            if app_id == "ysparr" and cli_name == "aggregare":
                 aggregare_models_cli_installed = installed
         if app_id == "ysparr" and aggregare_models_cli_installed:
             lines.extend([
-                "- Model management: `sudo aggregare-models status` shows saved selections, live endpoint probes, and effective Ysparr/Redless runtime state.",
-                "- Change one role with `sudo aggregare-models set chat --url URL --model ID` or `sudo aggregare-models set coding --url URL --model ID`; validated changes update Ysparr and the Redless coding profile when installed, with rollback on failure.",
+                "- Model management: `sudo aggregare models status` shows saved selections, live endpoint probes, and effective Ysparr/Redless runtime state.",
+                "- Change one role with `sudo aggregare models set chat --url URL --model ID` or `sudo aggregare models set coding --url URL --model ID`; validated changes update Ysparr and the Redless coding profile when installed, with rollback on failure.",
             ])
         deployment = status.get("deployment", {}) if isinstance(status, dict) else {}
         if isinstance(deployment, dict):
@@ -298,7 +298,7 @@ def render_report(catalog_dir: Path, status_dir: Path, *, hostname: str,
         lines.append("No Aggregare-managed services were detected.")
     lines.extend([
         "", "## Management and logs", "",
-        "- Aggregare CLI: `aggregare report` and `aggregare summary` (`/usr/local/bin/aggregare`).",
+        "- Aggregare CLI: `aggregare report`, `aggregare summary`, and `aggregare models` (`/usr/local/bin/aggregare`).",
         "- Reapply from an Aggregare checkout with `./install.sh`.",
         "- Aggregare configuration directory: `/etc/aggregare` (may contain secrets; keep protected).",
         "- Application status records: `/var/lib/aggregare/status`.",

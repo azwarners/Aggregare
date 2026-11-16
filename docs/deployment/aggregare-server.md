@@ -338,14 +338,14 @@ without reinstalling the stack, reapply `playbooks/ysparr.yml --become` with
 `-e ysparr_upstream_base_url=https://CHAT_HOST:PORT -e ysparr_chat_model=CHAT_ID
 -e ysparr_coding_base_url=https://CODE_HOST:PORT -e ysparr_coding_model=CODE_ID`.
 
-After installation, `aggregare-models` provides the operator workflow without
+After installation, `aggregare models` provides the operator workflow without
 editing the protected JSON directly:
 
 ```text
-aggregare-models status
-sudo aggregare-models set chat --url https://CHAT_HOST:PORT --model CHAT_ID
-sudo aggregare-models set coding --url https://CODE_HOST:PORT --model CODE_ID
-sudo aggregare-models use-chat-for-coding
+aggregare models status
+sudo aggregare models set chat --url https://CHAT_HOST:PORT --model CHAT_ID
+sudo aggregare models set coding --url https://CODE_HOST:PORT --model CODE_ID
+sudo aggregare models use-chat-for-coding
 ```
 
 Status reports saved chat/coding selections separately from live `/v1/models`

@@ -21,8 +21,8 @@ package/fixture and live-model verification states. Live inference is not part
 of a normal install or reapply; an administrator can explicitly opt in with
 `ansible-playbook -i inventory.ini playbooks/redless.yml -e redless_live_smoke=true`.
 
-The Ysparr section's operator procedure is `aggregare-models status` for
-redacted saved-versus-live model checks, or `sudo aggregare-models set chat|coding
+The Ysparr section's operator procedure is `aggregare models status` for
+redacted saved-versus-live model checks, or `sudo aggregare models set chat|coding
 --url URL --model ID` for a validated selection change. The command preserves
 unrelated protected settings, restarts Ysparr, and rolls back if activation
 fails; `use-chat-for-coding` supports intentional same-model operation.

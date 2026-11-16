@@ -73,7 +73,7 @@
   ],
   "cli": [
     {"name": "ysparr", "path": "/usr/local/bin/ysparr", "description": "Ysparr AI relay and agent publishing CLI."},
-    {"name": "aggregare-models", "path": "/usr/local/bin/aggregare-models", "description": "Inspect and change Ysparr chat/coding model selections."}
+    {"name": "aggregare", "path": "/usr/local/bin/aggregare", "description": "Aggregare report, summary, and Ysparr model-management CLI."}
   ],
   "configuration": [
     {

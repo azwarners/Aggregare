@@ -72,13 +72,13 @@ class DeploymentReportTests(unittest.TestCase):
     def test_report_lists_model_management_procedure_when_ysparr_cli_is_installed(self):
         entry = {
             "id": "ysparr", "display_name": "Ysparr", "services": [],
-            "cli": [{"name": "aggregare-models", "path": sys.executable}],
+            "cli": [{"name": "aggregare", "path": sys.executable}],
         }
         (self.catalog / "index.json").write_text(json.dumps({"applications": [{"id": "ysparr", "path": "applications/ysparr.json"}]}))
         (self.apps / "ysparr.json").write_text(json.dumps(entry))
         (self.statuses / "ysparr.json").write_text(json.dumps({"application_id": "ysparr", "state": "running"}))
         content = self.render()
-        self.assertIn("sudo aggregare-models status", content)
+        self.assertIn("sudo aggregare models status", content)
         self.assertIn("validat", content)
 
     def test_report_lists_worker_account_and_persistent_paths_without_credentials(self):
@@ -141,6 +141,12 @@ class DeploymentReportTests(unittest.TestCase):
                                 capture_output=True, text=True, check=True)
         self.assertIn("Example: Recorded state: running", result.stdout)
         self.assertIn("http://127.0.0.1:8080/", result.stdout)
+
+    def test_models_command_uses_the_unified_aggregare_entry_point(self):
+        result = subprocess.run([str(ROOT / "tools/aggregare"), "models", "--help"], cwd=self.root,
+                                capture_output=True, text=True, check=True)
+        self.assertIn("usage: aggregare models", result.stdout)
+        self.assertIn("use-chat-for-coding", result.stdout)
 
     def test_redless_report_contains_operator_instructions_and_separate_verification(self):
         entry = {
