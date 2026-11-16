@@ -21,6 +21,12 @@ package/fixture and live-model verification states. Live inference is not part
 of a normal install or reapply; an administrator can explicitly opt in with
 `ansible-playbook -i inventory.ini playbooks/redless.yml -e redless_live_smoke=true`.
 
+The Ysparr section's operator procedure is `aggregare-models status` for
+redacted saved-versus-live model checks, or `sudo aggregare-models set chat|coding
+--url URL --model ID` for a validated selection change. The command preserves
+unrelated protected settings, restarts Ysparr, and rolls back if activation
+fails; `use-chat-for-coding` supports intentional same-model operation.
+
 The HabitSync section includes the password-change command. From your home directory, run `cd ~/Aggregare && ./tools/aggregare-habitsync-password`; it prompts twice without echoing the password, applies the new login while preserving the installer's saved LAN access and base URL, removes the superseded initial login handoff, and refreshes this report without recording the new password.
 
 Read it from any working directory with:

@@ -50,6 +50,7 @@
         - /opt/aggregare/ysparr
         - /opt/aggregare/venvs/ysparr
         - /usr/local/bin/ysparr
+        - /usr/local/bin/aggregare-models
 
     - name: Remove Ysparr catalog status
       ansible.builtin.file:
@@ -352,6 +353,14 @@
         owner: root
         group: root
         force: true
+
+    - name: Install the Aggregare model operator CLI
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../../../tools/aggregare-models"
+        dest: /usr/local/bin/aggregare-models
+        owner: root
+        group: root
+        mode: '0755'
 
     - name: Write Ysparr environment configuration
       ansible.builtin.template:

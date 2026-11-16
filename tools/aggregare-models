@@ -1,0 +1,321 @@
+#!/usr/bin/env python3
+"""Inspect and safely change Aggregare's Ysparr model selections."""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import fcntl
+import http.client
+import json
+import os
+from pathlib import Path
+import stat
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from urllib.parse import urlsplit, urlunsplit
+
+
+DEFAULT_CONFIG = Path("/etc/aggregare/ysparr-upstream.json")
+DEFAULT_SERVICE = "ysparr.service"
+DEFAULT_TIMEOUT = 8
+
+
+class ModelToolError(Exception):
+    """An expected operator-facing error."""
+
+
+@dataclass(frozen=True)
+class Probe:
+    reachable: bool
+    status: int | None
+    model_ids: tuple[str, ...] = ()
+    error: str = ""
+
+    @property
+    def advertised(self) -> bool:
+        return self.status == 200 and bool(self.model_ids)
+
+
+def config_path() -> Path:
+    return Path(os.environ.get("AGGREGARE_YSPARR_CONFIG", str(DEFAULT_CONFIG)))
+
+
+def service_name() -> str:
+    return os.environ.get("AGGREGARE_YSPARR_SERVICE", DEFAULT_SERVICE)
+
+
+def normalize_url(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ModelToolError("URL must not be empty")
+    if "://" not in value:
+        value = "http://" + value
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ModelToolError("URL must be an http:// or https:// endpoint with a hostname")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ModelToolError("URL must not contain credentials, query parameters, or fragments")
+    if parsed.path not in {"", "/", "/v1", "/v1/"}:
+        raise ModelToolError("URL must be an endpoint root, optionally ending in /v1")
+    host = parsed.hostname
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    netloc = host
+    if parsed.port:
+        netloc += f":{parsed.port}"
+    return urlunsplit((parsed.scheme, netloc, "", "", "")).rstrip("/")
+
+
+def validate_model(value: str) -> str:
+    value = value.strip()
+    if not value or any(char.isspace() for char in value):
+        raise ModelToolError("model ID must be a non-empty value without whitespace")
+    return value
+
+
+def endpoint_url(base_url: str) -> str:
+    return normalize_url(base_url).rstrip("/") + "/v1/models"
+
+
+def _safe_error(error: BaseException) -> str:
+    if isinstance(error, TimeoutError):
+        return "timed out"
+    if isinstance(error, OSError):
+        return error.__class__.__name__.replace("Error", "").lower() or "connection failed"
+    return "request failed"
+
+
+def probe(base_url: str, api_key: str = "", timeout: int = DEFAULT_TIMEOUT) -> Probe:
+    """Fetch only /v1/models and never expose response bodies or credentials."""
+    try:
+        parsed = urlsplit(endpoint_url(base_url))
+        connection_class = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+        connection = connection_class(parsed.hostname, parsed.port, timeout=timeout)
+        try:
+            headers = {"Accept": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            connection.request("GET", parsed.path, headers=headers)
+            response = connection.getresponse()
+            status = response.status
+            body = response.read(1024 * 1024)
+        finally:
+            connection.close()
+    except (OSError, TimeoutError, ValueError) as error:
+        return Probe(False, None, error=_safe_error(error))
+
+    if status in {401, 403}:
+        return Probe(True, status, error="authentication required")
+    if status != 200:
+        return Probe(True, status, error="endpoint returned an error")
+    try:
+        payload = json.loads(body.decode("utf-8"))
+        entries = payload.get("data", [])
+        model_ids = tuple(entry["id"] for entry in entries if isinstance(entry, dict) and isinstance(entry.get("id"), str))
+    except (UnicodeDecodeError, json.JSONDecodeError, AttributeError, TypeError):
+        return Probe(True, status, error="invalid models response")
+    if not model_ids:
+        return Probe(True, status, error="no models advertised")
+    return Probe(True, status, model_ids=model_ids)
+
+
+def load_config(path: Path) -> dict:
+    try:
+        with path.open(encoding="utf-8") as stream:
+            value = json.load(stream)
+    except FileNotFoundError as error:
+        raise ModelToolError(f"saved configuration is not available at {path}") from error
+    except PermissionError as error:
+        raise ModelToolError(f"cannot read {path}; status may require membership of the ysparr group") from error
+    except (OSError, json.JSONDecodeError) as error:
+        raise ModelToolError(f"saved configuration at {path} is invalid") from error
+    if not isinstance(value, dict):
+        raise ModelToolError(f"saved configuration at {path} is not a JSON object")
+    return value
+
+
+def saved_role(config: dict, role: str) -> tuple[str, str]:
+    if role == "chat":
+        return str(config.get("ysparr_upstream_base_url", "")), str(config.get("ysparr_chat_model", ""))
+    coding_url = config.get("ysparr_coding_base_url") or config.get("ysparr_upstream_base_url", "")
+    coding_model = config.get("ysparr_coding_model") or config.get("ysparr_chat_model", "")
+    return str(coding_url), str(coding_model)
+
+
+def display_url(value: str) -> str:
+    try:
+        return normalize_url(value)
+    except ModelToolError:
+        return value or "not configured"
+
+
+def status(path: Path, json_output: bool = False) -> int:
+    try:
+        config = load_config(path)
+    except ModelToolError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
+    api_key = str(config.get("ysparr_upstream_api_key", ""))
+    result = {"config_path": str(path), "roles": {}}
+    for role in ("chat", "coding"):
+        url, model = saved_role(config, role)
+        current = {"url": display_url(url), "model": model or "not configured", "saved": bool(url and model)}
+        if url:
+            check = probe(url, api_key if role == "chat" else "")
+            current.update({
+                "reachable": check.reachable,
+                "http_status": check.status,
+                "model_advertised": model in check.model_ids if check.advertised else False,
+                "error": check.error,
+            })
+        else:
+            current.update({"reachable": False, "http_status": None, "model_advertised": False, "error": "not configured"})
+        result["roles"][role] = current
+    if json_output:
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    print(f"Saved configuration: {path}")
+    for role in ("chat", "coding"):
+        current = result["roles"][role]
+        reachability = "reachable" if current["reachable"] else "unreachable"
+        advertised = "yes" if current["model_advertised"] else "no"
+        detail = current["error"] or f"HTTP {current['http_status']}"
+        print(f"{role.title()}: saved URL {current['url']}; saved model {current['model']}")
+        print(f"  live endpoint: {reachability} ({detail}); model advertised: {advertised}")
+    return 0
+
+
+@contextlib.contextmanager
+def locked(path: Path):
+    lock_path = Path(os.environ.get("AGGREGARE_YSPARR_LOCK", str(path) + ".lock"))
+    try:
+        lock_path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+        with lock_path.open("a+", encoding="utf-8") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            yield
+    except PermissionError as error:
+        raise ModelToolError(f"modifications require sudo access to {path}") from error
+
+
+def atomic_write(path: Path, data: dict | bytes, metadata: os.stat_result) -> None:
+    path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary_path = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, stat.S_IMODE(metadata.st_mode))
+        if hasattr(os, "fchown"):
+            try:
+                os.fchown(descriptor, metadata.st_uid, metadata.st_gid)
+            except PermissionError:
+                if os.geteuid() == 0:
+                    raise
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            descriptor = -1
+            if isinstance(data, bytes):
+                stream.buffer.write(data)
+            else:
+                json.dump(data, stream, indent=2, sort_keys=True)
+                stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_path, path)
+        directory_fd = os.open(path.parent, os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary_path.unlink(missing_ok=True)
+
+
+def restart_service() -> tuple[bool, str]:
+    try:
+        subprocess.run(["systemctl", "restart", service_name()], check=True, capture_output=True, text=True, timeout=30)
+        subprocess.run(["systemctl", "is-active", "--quiet", service_name()], check=True, timeout=10)
+        return True, "service active"
+    except (OSError, subprocess.SubprocessError):
+        return False, "service reload failed"
+
+
+def set_role(role: str, url: str, model: str, path: Path) -> int:
+    try:
+        normalized_url = normalize_url(url)
+        normalized_model = validate_model(model)
+        with locked(path):
+            config = load_config(path)
+            api_key = str(config.get("ysparr_upstream_api_key", ""))
+            check = probe(normalized_url, api_key if role == "chat" else "")
+            if not check.advertised:
+                detail = check.error or f"HTTP {check.status}"
+                raise ModelToolError(f"endpoint was not accepted ({detail}); configuration was not changed")
+            if normalized_model not in check.model_ids:
+                raise ModelToolError(f"model {normalized_model!r} is not advertised by the endpoint; configuration was not changed")
+            before = dict(config)
+            before_bytes = path.read_bytes()
+            metadata = path.stat()
+            if role == "chat":
+                config["ysparr_upstream_base_url"] = normalized_url
+                config["ysparr_chat_model"] = normalized_model
+            else:
+                config["ysparr_coding_base_url"] = normalized_url
+                config["ysparr_coding_model"] = normalized_model
+            if config == before:
+                print(f"{role.title()} selection already matches; no changes made.")
+                return 0
+            atomic_write(path, config, metadata)
+            active, detail = restart_service()
+            if not active:
+                atomic_write(path, before_bytes, metadata)
+                restart_service()
+                raise ModelToolError(f"{detail}; restored the previous configuration")
+            print(f"Applied {role} URL {normalized_url} and model {normalized_model}; {detail}.")
+            print("Model selection changes do not download or start model weights; the endpoint must already serve the model.")
+            return 0
+    except ModelToolError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
+    except PermissionError:
+        print(f"Error: modifications require sudo access to {path}", file=sys.stderr)
+        return 1
+
+
+def parser() -> argparse.ArgumentParser:
+    command = argparse.ArgumentParser(prog="aggregare-models", description="Inspect and change Aggregare Ysparr chat/coding model selections.")
+    command.add_argument("--json", action="store_true", dest="json_output", help="status output as JSON (never includes API keys)")
+    subcommands = command.add_subparsers(dest="command", required=True)
+    status_command = subcommands.add_parser("status", help="show saved selections and live endpoint probes")
+    status_command.add_argument("--json", action="store_true", dest="json_output", help="status output as JSON (never includes API keys)")
+    set_command = subcommands.add_parser("set", help="change one model role after live validation")
+    set_command.add_argument("role", choices=("chat", "coding"))
+    set_command.add_argument("--url", required=True, help="OpenAI-compatible endpoint root, optionally ending in /v1")
+    set_command.add_argument("--model", required=True, help="model ID already advertised by the endpoint")
+    subcommands.add_parser("use-chat-for-coding", help="copy the saved chat URL and model to the coding role")
+    subcommands.add_parser("use-coding-for-chat", help="copy the saved coding URL and model to the chat role")
+    return command
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parser().parse_args(argv)
+    path = config_path()
+    if args.command == "status":
+        return status(path, args.json_output)
+    if args.command == "set":
+        return set_role(args.role, args.url, args.model, path)
+    try:
+        config = load_config(path)
+        source, model = saved_role(config, "chat" if args.command == "use-chat-for-coding" else "coding")
+        if not source or not model:
+            raise ModelToolError("the source role is not fully configured")
+        return set_role("coding" if args.command == "use-chat-for-coding" else "chat", source, model, path)
+    except ModelToolError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
