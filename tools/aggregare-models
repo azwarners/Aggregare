@@ -141,7 +141,7 @@ def load_config(path: Path) -> dict:
     except FileNotFoundError as error:
         raise ModelToolError(f"saved configuration is not available at {path}") from error
     except PermissionError as error:
-        raise ModelToolError(f"cannot read {path}; status may require membership of the ysparr group") from error
+        raise ModelToolError(f"cannot read {path}; run 'sudo aggregare models status' or use an authorized ysparr-group account") from error
     except (OSError, json.JSONDecodeError) as error:
         raise ModelToolError(f"saved configuration at {path} is invalid") from error
     if not isinstance(value, dict):

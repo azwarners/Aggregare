@@ -342,7 +342,7 @@ After installation, `aggregare models` provides the operator workflow without
 editing the protected JSON directly:
 
 ```text
-aggregare models status
+sudo aggregare models status
 sudo aggregare models set chat --url https://CHAT_HOST:PORT --model CHAT_ID
 sudo aggregare models set coding --url https://CODE_HOST:PORT --model CODE_ID
 sudo aggregare models use-chat-for-coding
