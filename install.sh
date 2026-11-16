@@ -107,6 +107,7 @@ fail() {
 install_state_get() {
   sudo python3 - "$INSTALL_STATE_FILE" "$1" <<'PY'
 import json
+import os
 import sys
 
 path, key = sys.argv[1:]

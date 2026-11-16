@@ -26,6 +26,12 @@ class IdentityConfigTests(unittest.TestCase):
         self.assertEqual(invalid.returncode, 2)
         self.assertIn("choose kanidm, external_oidc, or none", invalid.stderr)
 
+    def test_installer_progress_reader_imports_os_for_missing_state_check(self):
+        installer = (ROOT / "install.sh").read_text()
+        progress_reader = installer.split("install_state_get() {", 1)[1].split("install_state_set() {", 1)[0]
+        self.assertIn("import os", progress_reader)
+        self.assertIn("if not os.path.exists(path):", progress_reader)
+
     def test_versioned_config_accepts_all_supported_selections(self):
         schema = json.loads((ROOT / "schemas/v1/identity-config.schema.json").read_text())
         Draft202012Validator.check_schema(schema)
