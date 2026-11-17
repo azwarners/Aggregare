@@ -28,8 +28,13 @@ sudo -u redless -- aggRedless run \
 
 The command must run as the unprivileged `redless` worker. A successful Redless
 result exits 0; failed or cancelled results, malformed or missing terminal
-output, missing configuration, and local timeouts exit nonzero. Use
-`--help` for options. The command prints the run ID and saved paths. Results
+output, and missing configuration exit nonzero. The command waits indefinitely
+by default because model inference may be very slow. Use the optional
+`--timeout SECONDS` flag only when a local deadline is deliberately wanted;
+that produces an explicitly ambiguous timeout result. Use `--help` for options.
+The command streams the machine's stdout JSONL and stderr to the terminal while
+also preserving both streams in the saved paths. The command prints the run ID
+and saved paths after completion. Results
 and trajectories are under `/var/lib/redless/runs`; captured stdout JSONL and
 stderr are under `/var/log/redless`. A trajectory is a single `.json` document,
 while the machine status/result stream is preserved as `.stdout.jsonl`.

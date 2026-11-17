@@ -10,6 +10,8 @@ import pwd
 import signal
 import subprocess
 import sys
+import selectors
+import time
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +23,7 @@ except ModuleNotFoundError:  # Installed beside the private helper.
 
 DEFAULT_MACHINE = "/usr/local/bin/redless-machine"
 DEFAULT_HOME = "/var/lib/redless"
-DEFAULT_TIMEOUT = 900.0
+DEFAULT_TIMEOUT = None
 SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 
@@ -42,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
             machine_path=Path(os.environ.get("AGGREGARE_REDLESS_MACHINE", DEFAULT_MACHINE)),
             home=Path(os.environ.get("AGGREGARE_REDLESS_HOME", DEFAULT_HOME)),
             timeout=arguments.timeout,
+            stream_output=not arguments.json,
         )
     except (IdentityError, OSError, ValueError, RuntimeError) as exc:
         print(f"aggregare-redless-task: {exc}", file=sys.stderr)
@@ -62,7 +65,8 @@ def run_task(
     logs_root: Path,
     machine_path: Path,
     home: Path,
-    timeout: float = DEFAULT_TIMEOUT,
+    timeout: float | None = DEFAULT_TIMEOUT,
+    stream_output: bool = False,
     expected_uid: int | None = None,
     expected_gid: int | None = None,
 ) -> dict[str, Any]:
@@ -72,7 +76,7 @@ def run_task(
     leave them unset so the configured ``redless`` account is required.
     """
 
-    if timeout <= 0:
+    if timeout is not None and timeout <= 0:
         raise ValueError("timeout must be positive")
     _check_identity(expected_uid=expected_uid, expected_gid=expected_gid)
     run = allocate_run(workspace_root, runs_root, logs_root)
@@ -110,7 +114,12 @@ def run_task(
             except ProcessLookupError:
                 process_group_id = process.pid
         try:
-            stdout, stderr = process.communicate(request.encode("utf-8"), timeout=timeout)
+            stdout, stderr = _communicate_with_capture(
+                process,
+                request.encode("utf-8"),
+                timeout=timeout,
+                stream_output=stream_output,
+            )
         except subprocess.TimeoutExpired as exc:
             timed_out = True
             stdout = exc.stdout or b""
@@ -158,7 +167,12 @@ def _build_parser() -> argparse.ArgumentParser:
     source = run.add_mutually_exclusive_group(required=True)
     source.add_argument("--task", help="literal task text")
     source.add_argument("--task-file", type=Path, help="UTF-8 file containing the task")
-    run.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="local process timeout in seconds")
+    run.add_argument(
+        "--timeout",
+        type=float,
+        default=DEFAULT_TIMEOUT,
+        help="optional local process timeout in seconds (default: wait indefinitely)",
+    )
     run.add_argument("--json", action="store_true", help="print the final outcome as JSON")
     return parser
 
@@ -200,6 +214,47 @@ def _child_environment(home: Path) -> dict[str, str]:
         "LANG": os.environ.get("LANG", "C.UTF-8"),
         "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
     }
+
+
+def _communicate_with_capture(
+    process: subprocess.Popen[bytes],
+    request: bytes,
+    *,
+    timeout: float | None,
+    stream_output: bool,
+) -> tuple[bytes, bytes]:
+    """Send one request while retaining and optionally displaying both streams."""
+
+    assert process.stdin is not None
+    assert process.stdout is not None
+    assert process.stderr is not None
+    process.stdin.write(request)
+    process.stdin.close()
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ, (process.stdout, sys.stdout.buffer))
+    selector.register(process.stderr, selectors.EVENT_READ, (process.stderr, sys.stderr.buffer))
+    captured = {process.stdout: bytearray(), process.stderr: bytearray()}
+    deadline = time.monotonic() + timeout if timeout is not None else None
+    try:
+        while selector.get_map():
+            remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+            if remaining == 0.0:
+                raise subprocess.TimeoutExpired(process.args, timeout, output=bytes(captured[process.stdout]), stderr=bytes(captured[process.stderr]))
+            for key, _ in selector.select(remaining):
+                stream = key.fileobj
+                chunk = os.read(stream.fileno(), 65536)
+                if not chunk:
+                    selector.unregister(stream)
+                    continue
+                captured[stream].extend(chunk)
+                if stream_output:
+                    terminal = key.data[1]
+                    terminal.write(chunk)
+                    terminal.flush()
+    finally:
+        selector.close()
+    process.wait()
+    return bytes(captured[process.stdout]), bytes(captured[process.stderr])
 
 
 def _stop_local_process_group(

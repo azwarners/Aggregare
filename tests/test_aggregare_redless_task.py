@@ -56,7 +56,7 @@ def fake_machine(tmp_path):
     return machine
 
 
-def run_fake(tmp_path, task, *, timeout=5):
+def run_fake(tmp_path, task, *, timeout=5, stream_output=False):
     roots = [tmp_path / name for name in ("workspaces", "runs", "logs")]
     home = tmp_path / "redless-home"
     (home / ".config").mkdir(parents=True)
@@ -69,6 +69,7 @@ def run_fake(tmp_path, task, *, timeout=5):
         machine_path=fake_machine(tmp_path),
         home=home,
         timeout=timeout,
+        stream_output=stream_output,
         expected_uid=os.geteuid(),
         expected_gid=os.getegid(),
     )
@@ -84,6 +85,22 @@ def test_fake_machine_success_preserves_input_environment_and_artifacts(tmp_path
     assert f"HOME={tmp_path / 'redless-home'}" in Path(result["stderr_path"]).read_text()
     assert "SECRET=must-not-leak" not in Path(result["stderr_path"]).read_text()
     assert result["trajectory_path"].endswith(".trajectory.json")
+
+
+def test_success_streams_machine_output_when_requested(tmp_path, capsys):
+    result = run_fake(tmp_path, "hello", stream_output=True)
+
+    captured = capsys.readouterr()
+    assert result["outcome"] == "succeeded"
+    assert '"type": "status"' in captured.out
+    assert '"type": "result"' in captured.out
+    assert "HOME=" in captured.err
+
+
+def test_default_cli_timeout_is_disabled():
+    arguments = _build_parser().parse_args(["run", "--task", "hello"])
+
+    assert arguments.timeout is None
 
 
 @pytest.mark.parametrize(
