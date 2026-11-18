@@ -30,6 +30,7 @@
         - /usr/local/bin/redless-machine
         - /usr/local/bin/aggregare-redless-task
         - /usr/local/bin/aggRedless
+        - /usr/local/bin/redless-issue-queue
         - /usr/local/lib/aggregare/aggregare_redless_task.py
         - /usr/local/lib/aggregare/redless_task_adapter.py
     - name: Remove the Redless deployment status record
@@ -346,6 +347,14 @@
         state: link
         owner: root
         group: root
+
+    - name: Install the Redless GitHub issue queue
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../../../tools/redless-issue-queue.sh"
+        dest: /usr/local/bin/redless-issue-queue
+        owner: root
+        group: root
+        mode: '0755'
 
     - name: Verify the short Redless task CLI alias as the unprivileged worker
       ansible.builtin.command:

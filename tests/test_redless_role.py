@@ -79,6 +79,21 @@ def test_redless_catalog_declares_cli_and_no_human_credentials():
     assert "password" not in entry["configuration"]
 
 
+def test_redless_issue_queue_is_installed_and_root_owned():
+    tasks = (ROOT / "ansible/roles/redless/tasks/main.yml").read_text()
+    script = ROOT / "tools/redless-issue-queue.sh"
+    assert script.is_file()
+    assert "src: \"{{ role_path }}/../../../tools/redless-issue-queue.sh\"" in tasks
+    assert "dest: /usr/local/bin/redless-issue-queue" in tasks
+    assert "mode: '0755'" in tasks
+    assert "/usr/local/bin/redless-issue-queue" in tasks.split("- name: Remove Redless", 1)[1].split("- name: Install and configure Redless", 1)[0]
+    content = script.read_text()
+    assert "--endpoint" in content
+    assert "--plan" in content
+    assert "Authorization:' --header 'PRIVATE-TOKEN:'" in content
+    assert "redless-machine" in content
+
+
 def test_redless_uninstall_preserves_data_by_default():
     tasks = (ROOT / "ansible/roles/redless/tasks/main.yml").read_text()
     absent_block = tasks.split("- name: Remove Redless", 1)[1].split("- name: Install and configure Redless", 1)[0]

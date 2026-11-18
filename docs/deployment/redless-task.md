@@ -75,6 +75,39 @@ else
 fi
 ```
 
+## Run the Redless issue queue
+
+The installed `redless-issue-queue` command is the single operator script for
+discovering ready public issues, previewing a frozen plan, and processing a
+small batch sequentially. It makes anonymous GitHub reads and never pushes,
+commits, opens pull requests, or merges changes.
+
+Preview the first ready issue:
+
+```sh
+sudo -u redless -- redless-issue-queue
+```
+
+Run one issue against an explicitly selected OpenAI-compatible coding endpoint:
+
+```sh
+sudo -u redless -- redless-issue-queue --run --once \
+  --endpoint http://MODEL_HOST:8080/v1 \
+  --model MODEL_ID
+```
+
+Use `--all` for the selected queue, or `--plan FILE` to execute a previously
+saved plan without more GitHub discovery. The endpoint and model can also be
+provided through `REDLESS_ENDPOINT` and `REDLESS_MODEL`. The default readiness
+rule accepts the `ready` label or a `Readiness` heading beginning with `Ready`;
+set `READY_MODE=label` to require only the label.
+
+Queue plans are saved under `/var/lib/redless/redless-queue/plans`, workspaces
+under `/var/lib/redless/redless-queue/workspaces`, run results under
+`/var/lib/redless/redless-queue/runs`, and stderr logs beside each run result.
+Existing workspaces or run records are skipped so a human can inspect or
+retry them deliberately.
+
 Timeout output is explicitly ambiguous: the command stops its local process
 group, but does not claim that any remote coding-model work has stopped. The
 ordinary command is separate from the opt-in Ansible live smoke below.
