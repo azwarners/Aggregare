@@ -94,6 +94,18 @@ def test_redless_issue_queue_is_installed_and_root_owned():
     assert "redless-machine" in content
 
 
+def test_redless_issue_queue_supports_read_only_assessments():
+    content = (ROOT / "tools/redless-issue-queue.sh").read_text()
+    assert "--assess-only" in content
+    assert "--retry-assessment" in content
+    assert "assessment.plan.json" in content
+    assert "assessment.md" in content
+    assert "source_revision" in content
+    assert "Model JSON did not satisfy the assessment schema" in content
+    assert "Do not edit files" in content
+    assert "write GitHub state" in content
+
+
 def test_redless_uninstall_preserves_data_by_default():
     tasks = (ROOT / "ansible/roles/redless/tasks/main.yml").read_text()
     absent_block = tasks.split("- name: Remove Redless", 1)[1].split("- name: Install and configure Redless", 1)[0]

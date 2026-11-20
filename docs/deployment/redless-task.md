@@ -102,6 +102,23 @@ provided through `REDLESS_ENDPOINT` and `REDLESS_MODEL`. The default readiness
 rule accepts the `ready` label or a `Readiness` heading beginning with `Ready`;
 set `READY_MODE=label` to require only the label.
 
+Run a bounded, read-only assessment for a small selected batch:
+
+```sh
+sudo -u redless -- redless-issue-queue --assess-only --once \
+  --endpoint http://MODEL_HOST:8080/v1 --model MODEL_ID
+```
+
+Assessment mode reuses issue discovery and writes `*.assessment.json`,
+`*.assessment.plan.json`, and `*.assessment.md` under the run directory. The
+JSON records the issue, source revision, evidence, classification, bounded
+tasks, dependency order, verification requirements, complexity, recommended
+role, and a future Zoapaww prompt. A run starts as `running` and becomes
+`complete` only after schema validation; crashes, timeouts, and malformed model
+output remain `partial`. Existing assessment artifacts are skipped unless
+`--retry-assessment` is supplied. Assessment mode does not modify GitHub,
+repository files, the index, staging, commits, or deployment.
+
 Queue plans are saved under `/var/lib/redless/redless-queue/plans`, workspaces
 under `/var/lib/redless/redless-queue/workspaces`, run results under
 `/var/lib/redless/redless-queue/runs`, and stderr logs beside each run result.
