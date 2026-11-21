@@ -19,12 +19,14 @@ usage() {
 Usage: redless-issue-queue [--run] [--assess-only] [--once|--all]
        [--endpoint URL] [--model ID] [--profile FILE]
        [--owner NAME] [--label NAME] [--plan FILE] [--retry-assessment]
+       [--assessment-max-calls N]
 
 Without --run, discover and preview ready public issues without executing them.
 --plan skips GitHub discovery and executes an existing JSONL plan.
 --assess-only asks Redless for a bounded read-only plan and writes assessment artifacts;
 it never permits code, GitHub, staging, commit, or deployment changes.
 --retry-assessment allows a completed or partial assessment to be reassessed.
+--assessment-max-calls sets the assessment model-call budget (default: 12).
 EOF
   exit "${1:-2}"
 }
@@ -40,6 +42,9 @@ OWNER="${REDLESS_OWNER:-azwarners}"
 READY_LABEL="${READY_LABEL:-ready}"
 READY_MODE="${READY_MODE:-label-or-heading}"
 MAX_API_REQUESTS="${MAX_API_REQUESTS:-48}"
+ASSESSMENT_MAX_CALLS="${ASSESSMENT_MAX_CALLS:-12}"
+ASSESSMENT_SYNTHESIS_CALL="${ASSESSMENT_SYNTHESIS_CALL:-7}"
+ASSESSMENT_FINALIZATION_CALL="${ASSESSMENT_FINALIZATION_CALL:-10}"
 ROOT="${REDLESS_QUEUE_ROOT:-${HOME}/redless-queue}"
 PLAN=""
 
@@ -56,10 +61,21 @@ while (($#)); do
     --owner) (($# >= 2)) || usage; OWNER=$2; shift 2 ;;
     --label) (($# >= 2)) || usage; READY_LABEL=$2; shift 2 ;;
     --plan) (($# >= 2)) || usage; PLAN=$2; shift 2 ;;
+    --assessment-max-calls) (($# >= 2)) || usage; ASSESSMENT_MAX_CALLS=$2; shift 2 ;;
     --help|-h) usage 0 ;;
     *) usage ;;
   esac
 done
+
+[[ "$ASSESSMENT_MAX_CALLS" =~ ^[1-9][0-9]*$ ]] || {
+  echo 'assessment max calls must be a positive integer' >&2
+  exit 2
+}
+(( ASSESSMENT_SYNTHESIS_CALL >= 1 && ASSESSMENT_SYNTHESIS_CALL < ASSESSMENT_FINALIZATION_CALL &&
+   ASSESSMENT_FINALIZATION_CALL <= ASSESSMENT_MAX_CALLS )) || {
+  echo 'assessment phase thresholds must satisfy 1 <= synthesis < finalization <= max calls' >&2
+  exit 2
+}
 
 if [[ "$MODE" == run && -z "$ENDPOINT" ]]; then
   echo 'Running requires --endpoint URL or REDLESS_ENDPOINT.' >&2
@@ -180,6 +196,9 @@ while IFS= read -r issue && ((attempted < LIMIT)); do
     echo "SKIP $repo#$number — existing attempt/workspace"; continue
   fi
   echo "START $repo#$number — $title"
+  if (( ASSESS_ONLY )); then
+    echo "ASSESSMENT budget: max $ASSESSMENT_MAX_CALLS model requests; synthesis at call $ASSESSMENT_SYNTHESIS_CALL; finalization at call $ASSESSMENT_FINALIZATION_CALL"
+  fi
   mkdir -p "$(dirname "$work")" "$run"
   printf '%s\n' "$issue" > "$run.issue.json"
   if (( ASSESS_ONLY )); then
@@ -204,6 +223,16 @@ with these keys:
 "zoapaww_next_prompt":"..."}
 Keep tasks bounded and testable. If blocked, name the concrete blocker and keep tasks
 empty unless a prerequisite task is genuinely useful.
+
+Assessment execution contract (the worker must enforce this in every actual model
+request, including retries):
+- Maximum total model requests: $ASSESSMENT_MAX_CALLS. Count the request before sending it.
+- Request 1 through $((ASSESSMENT_SYNTHESIS_CALL - 1)): investigate efficiently and gather evidence.
+- Request $ASSESSMENT_SYNTHESIS_CALL through $((ASSESSMENT_FINALIZATION_CALL - 1)): stop broad exploration, resolve only essential unknowns, and synthesize.
+- Request $ASSESSMENT_FINALIZATION_CALL through $((ASSESSMENT_MAX_CALLS - 1)): stop exploration and produce the structured assessment from available evidence; mark uncertainty explicitly.
+- Request $ASSESSMENT_MAX_CALLS: final response only. Do not request or execute tools.
+- Never issue a request after the maximum. If finalization is unavailable or invalid,
+  preserve the evidence, last model output, and an explicit partial/incomplete status.
 PROMPT
 )
     mkdir -p "$(dirname "$run")"
@@ -226,8 +255,10 @@ PROMPT
   fi
   jq -nc --arg id "$id" --arg task "$task" --arg work "$work" --arg url "https://github.com/$repo.git" \
     --arg ref "$branch" --arg model "$MODEL" --arg endpoint "$ENDPOINT" --arg profile "$PROFILE" \
+    --argjson max_calls "$ASSESSMENT_MAX_CALLS" --argjson synthesis_call "$ASSESSMENT_SYNTHESIS_CALL" \
+    --argjson finalization_call "$ASSESSMENT_FINALIZATION_CALL" --argjson assessment_only "$ASSESS_ONLY" \
     --arg result "$run.result.json" --arg trajectory "$run.trajectory.json" \
-    '{type:"task",payload:{contract_version:"1",run_id:$id,task:$task,workspace:{mode:"clone",path:$work,repository_url:$url,ref:$ref,cleanup_policy:"preserve"},model:{profile:$profile,model_name:$model,endpoint_url:$endpoint},destinations:{result_path:$result,trajectory_path:$trajectory}}}' > "$run.request.jsonl"
+    '{type:"task",payload:{contract_version:"1",run_id:$id,task:$task,workspace:{mode:"clone",path:$work,repository_url:$url,ref:$ref,cleanup_policy:"preserve"},model:{profile:$profile,model_name:$model,endpoint_url:$endpoint},assessment:(if $assessment_only == 1 then {mode:"read-only",max_model_calls:$max_calls,synthesis_begins_at:$synthesis_call,finalization_begins_at:$finalization_call,final_call:$max_calls,disable_tools_on_final_call:true,phase_instructions:{investigate:"Call {call_index}/" + ($max_calls|tostring) + "; calls remaining after this request: {calls_remaining}. Investigate efficiently and gather evidence.",synthesize:"Call {call_index}/" + ($max_calls|tostring) + "; calls remaining after this request: {calls_remaining}. Stop broad exploration and synthesize.",finalize:"Call {call_index}/" + ($max_calls|tostring) + "; calls remaining after this request: {calls_remaining}. Stop exploration and produce the structured assessment.",final:"Call " + ($max_calls|tostring) + "/" + ($max_calls|tostring) + "; 0 calls remain after this request. Return the final assessment only; do not request tools."}} else null end),destinations:{result_path:$result,trajectory_path:$trajectory}}}' > "$run.request.jsonl"
   if MSWEA_CONFIGURED=true redless-machine < "$run.request.jsonl" > "$run.events.jsonl" 2> >(tee "$run.stderr.log" >&2); then
     state=$(jq -r '.state // "missing"' "$run.result.json" 2>/dev/null || echo missing)
   else
@@ -243,18 +274,46 @@ PROMPT
         --arg assessed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         '{plan_version:"1",state:(if $state == "succeeded" then "complete" else "partial" end),repo:$repo,issue:($number|tonumber),issue_url:$url,source_revision:$revision,assessed_at:$assessed_at,plan:$plan}' > "$plan_file"
       jq -e '.plan.classification and (.plan.evidence|type == "array") and (.plan.tasks|type == "array") and (.plan.verification|type == "array") and (.plan.recommended_role)' "$plan_file" >/dev/null 2>&1 || {
-        jq '.state="partial" | .error="Model JSON did not satisfy the assessment schema"' "$plan_file" > "$plan_file.tmp" && mv "$plan_file.tmp" "$plan_file"
+        jq --arg result "$run.result.json" --arg events "$run.events.jsonl" \
+          '.state="partial" | .error="Model JSON did not satisfy the assessment schema" | .diagnostics={result_path:$result,events_path:$events}' \
+          "$plan_file" > "$plan_file.tmp" && mv "$plan_file.tmp" "$plan_file"
       }
     else
       jq --arg error "No valid JSON assessment was returned; inspect result and event artifacts" \
-        '.state="partial" | .error=$error' "$assessment" > "$assessment.tmp" && mv "$assessment.tmp" "$assessment"
+        --arg last_model_output "$final_answer" --arg result "$run.result.json" --arg events "$run.events.jsonl" \
+        '.state="partial" | .error=$error | .last_model_output=$last_model_output | .diagnostics={result_path:$result,events_path:$events}' \
+        "$assessment" > "$assessment.tmp" && mv "$assessment.tmp" "$assessment"
       cp "$assessment" "$plan_file"
+    fi
+    trajectory_calls=$(jq -r '.info.model_stats.api_calls // .model_stats.api_calls // empty' "$run.trajectory.json" 2>/dev/null || true)
+    if [[ ! "$trajectory_calls" =~ ^[0-9]+$ ]]; then
+      trajectory_calls="unknown"
+    fi
+    if [[ "$trajectory_calls" != unknown && "$trajectory_calls" -gt "$ASSESSMENT_MAX_CALLS" ]]; then
+      jq --arg error "Assessment exceeded the model-call budget ($trajectory_calls > $ASSESSMENT_MAX_CALLS); completion is invalid" \
+        --argjson model_calls "$trajectory_calls" --argjson max_model_calls "$ASSESSMENT_MAX_CALLS" \
+        '.state="partial" | .error=$error | .model_calls=$model_calls | .max_model_calls=$max_model_calls' \
+        "$plan_file" > "$plan_file.tmp" && mv "$plan_file.tmp" "$plan_file"
+    else
+      jq --argjson max_model_calls "$ASSESSMENT_MAX_CALLS" --arg model_calls "$trajectory_calls" \
+        '.max_model_calls=$max_model_calls | .model_calls=(if ($model_calls|test("^[0-9]+$")) then ($model_calls|tonumber) else $model_calls end)' \
+        "$plan_file" > "$plan_file.tmp" && mv "$plan_file.tmp" "$plan_file"
+    fi
+    if [[ "$trajectory_calls" == unknown ]]; then
+      jq --arg result "$run.result.json" --arg events "$run.events.jsonl" \
+        '.state="partial" | .error="Assessment worker did not persist a model-request count; completion cannot be verified" | .diagnostics={result_path:$result,events_path:$events}' \
+        "$plan_file" > "$plan_file.tmp" && mv "$plan_file.tmp" "$plan_file"
+    fi
+    if [[ "$trajectory_calls" == "$ASSESSMENT_MAX_CALLS" ]]; then
+      jq '.finalization="required-final-call"' "$plan_file" > "$plan_file.tmp" && mv "$plan_file.tmp" "$plan_file"
     fi
     dirty=$(git -C "$work" status --porcelain 2>/dev/null || true)
     if [[ -n "$dirty" ]]; then
       jq --arg error "Assessment workspace is dirty; read-only contract was violated" \
         '.state="partial" | .error=$error' "$plan_file" > "$plan_file.tmp" && mv "$plan_file.tmp" "$plan_file"
     fi
+    jq 'if .state != "complete" and (.error // "") == "" then .error="Assessment did not reach a valid completed result" else . end' \
+      "$plan_file" > "$plan_file.tmp" && mv "$plan_file.tmp" "$plan_file"
     cp "$plan_file" "$assessment"
     {
       echo "# Assessment: $repo#$number — $title"
@@ -265,9 +324,10 @@ PROMPT
       echo
       jq -r 'if .plan then (.plan.summary // "") + "\n\n## Classification\n" + (.plan.classification // "unknown") + "\n\n## Evidence\n" + ((.plan.evidence // []) | map("- `" + .path + "`: " + .detail) | join("\n")) + "\n\n## Tasks\n" + ((.plan.tasks // []) | map("- [ ] " + .id + ": " + .description) | join("\n")) + "\n\n## Verification\n" + ((.plan.verification // []) | map("- " + .) | join("\n")) + "\n\nRecommended role: " + (.plan.recommended_role // "unknown") else (.error // "partial assessment") end' "$plan_file"
     } > "$run.assessment.md"
+    state=$(jq -r '.state // "partial"' "$plan_file")
   fi
   echo "DONE $repo#$number state=$state"
-  [[ "$state" == succeeded ]] || failed=$((failed + 1))
+  [[ "$state" == succeeded || ( "$ASSESS_ONLY" -eq 1 && "$state" == complete ) ]] || failed=$((failed + 1))
   attempted=$((attempted + 1))
 done < "$PLAN"
 echo "Finished: attempted=$attempted non-success=$failed; local results: $ROOT"

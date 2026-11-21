@@ -106,6 +106,18 @@ def test_redless_issue_queue_supports_read_only_assessments():
     assert "write GitHub state" in content
 
 
+def test_redless_issue_queue_bounds_assessment_requests_and_fails_closed():
+    content = (ROOT / "tools/redless-issue-queue.sh").read_text()
+    assert 'ASSESSMENT_MAX_CALLS="${ASSESSMENT_MAX_CALLS:-12}"' in content
+    assert "--assessment-max-calls" in content
+    assert "max_model_calls" in content
+    assert "synthesis_begins_at" in content
+    assert "finalization_begins_at" in content
+    assert "disable_tools_on_final_call" in content
+    assert "completion cannot be verified" in content
+    assert "completion is invalid" in content
+
+
 def test_redless_uninstall_preserves_data_by_default():
     tasks = (ROOT / "ansible/roles/redless/tasks/main.yml").read_text()
     absent_block = tasks.split("- name: Remove Redless", 1)[1].split("- name: Install and configure Redless", 1)[0]

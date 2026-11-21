@@ -109,6 +109,21 @@ sudo -u redless -- redless-issue-queue --assess-only --once \
   --endpoint http://MODEL_HOST:8080/v1 --model MODEL_ID
 ```
 
+Assessment requests use a configurable 12-request budget by default. Calls 1–6
+investigate, calls 7–9 synthesize, calls 10–11 finalize, and call 12 is the
+final-response-only request. Override the budget with
+`--assessment-max-calls N`; phase thresholds remain configurable through the
+`ASSESSMENT_SYNTHESIS_CALL` and `ASSESSMENT_FINALIZATION_CALL` environment
+variables. The request envelope carries call-count and phase instructions so a
+compatible Redless worker can inject them into every model message and disable
+tools for the final request. Retries are part of the same budget.
+
+The queue verifies the persisted trajectory request count before marking an
+assessment complete. Missing or excessive counts, invalid finalization, worker
+errors, and prohibited tool requests remain partial. Partial artifacts retain
+result/event paths, the last model output when available, and the existing
+trajectory/evidence for diagnosis; they are never used to publish child issues.
+
 Assessment mode reuses issue discovery and writes `*.assessment.json`,
 `*.assessment.plan.json`, and `*.assessment.md` under the run directory. The
 JSON records the issue, source revision, evidence, classification, bounded
