@@ -8,7 +8,7 @@
     "name": "Aggregare / Redless",
     "upstream": "https://github.com/azwarners/Redless"
   },
-  "version": "source-16bb8dd",
+  "version": "source-173171c",
   "status": "experimental",
   "install_methods": [
     "native-python-cli"

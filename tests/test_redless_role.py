@@ -12,7 +12,7 @@ def test_redless_is_a_pinned_default_bundle_component():
     assert "- redless" in playbook
     assert "- import_playbook: redless.yml" in default_playbook
     assert "redless" in preset["applications"]
-    assert "16bb8dd2d68582a55394075dfb7fbf5bb2924385" in playbook
+    assert "173171cc5018d1b2c3648780cc0f87ebce4bd588" in playbook
     assert "redless_live_smoke: true" not in playbook
 
 

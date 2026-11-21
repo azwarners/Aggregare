@@ -6,8 +6,8 @@ redless_user: redless
 redless_group: redless
 redless_home: /var/lib/redless
 redless_source: https://github.com/azwarners/Redless.git
-redless_ref: 16bb8dd2d68582a55394075dfb7fbf5bb2924385
-redless_version: source-16bb8dd
+redless_ref: 173171cc5018d1b2c3648780cc0f87ebce4bd588
+redless_version: source-173171c
 redless_upstream_config_path: /etc/aggregare/ysparr-upstream.json
 redless_coding_base_url: "{{ ysparr_coding_base_url | default('') }}"
 redless_coding_model: "{{ ysparr_coding_model | default('') }}"
