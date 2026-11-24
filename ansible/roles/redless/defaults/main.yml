@@ -25,3 +25,7 @@ redless_log_path: /var/log/redless
 # configured human users share redless for result read access, so this must
 # not be stored in a group-readable path.
 redless_config_path: "{{ redless_home }}/.config"
+# The GitHub App private key and IDs are operator-provisioned root-only files.
+# This role installs no credential and never places it in Redless's home.
+redless_github_app_config_path: /etc/aggregare/redless-github-app.json
+redless_github_app_private_key_path: /etc/aggregare/secrets/redless-github-app.pem

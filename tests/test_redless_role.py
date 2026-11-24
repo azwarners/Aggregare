@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import importlib.util
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -92,6 +93,60 @@ def test_redless_issue_queue_is_installed_and_root_owned():
     assert "--plan" in content
     assert "Authorization:' --header 'PRIVATE-TOKEN:'" in content
     assert "redless-machine" in content
+
+
+def test_redless_github_app_helper_is_root_owned_and_constrained():
+    tasks = (ROOT / "ansible/roles/redless/tasks/main.yml").read_text()
+    helper = (ROOT / "tools/redless_github_app.py").read_text()
+    sudoers = (ROOT / "ansible/roles/redless/templates/redless-github-app.sudoers.j2").read_text()
+    assert "redless_github_app.py" in tasks
+    assert "redless-github-app" in tasks
+    assert "mode: '0440'" in tasks
+    assert "visudo -cf %s" in tasks
+    assert "allowed_repositories" in helper
+    assert "installation_token" in helper
+    assert "Authorization" in helper
+    assert "git-credential" not in helper
+    assert "print(token" not in helper
+    assert "NOPASSWD" in sudoers
+    assert " doctor" in sudoers and " repos *" in sudoers and " issues *" in sudoers
+    assert "/etc/aggregare/secrets/redless-github-app.pem" in helper
+    git_helper = (ROOT / "tools/redless-github-app-git").read_text()
+    assert "isatty" in git_helper
+    assert "os.geteuid() != 0" in git_helper
+    assert 'sys.argv[1] != "get"' in git_helper
+    assert "password={installation_token(settings)}" in git_helper
+    assert "redless-github-app-git" in tasks
+
+
+def test_redless_issue_queue_keeps_anonymous_preview_and_adds_opt_in_app_reads():
+    content = (ROOT / "tools/redless-issue-queue.sh").read_text()
+    assert "--github-app" in content
+    assert "Authorization:' --header 'PRIVATE-TOKEN:'" in content
+    assert 'github_app repos "$OWNER"' in content
+    assert 'github_app issues "$repo"' in content
+    assert "refusing anonymous fallback" in content
+
+
+def test_github_app_doctor_never_serializes_its_installation_token(capsys, monkeypatch):
+    spec = importlib.util.spec_from_file_location("redless_github_app", ROOT / "tools/redless_github_app.py")
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    responses = iter([
+        {"token": "sensitive-installation-token"},
+        {"repositories": [{"full_name": "OWNER/REPOSITORY"}]},
+    ])
+    monkeypatch.setattr(helper, "config", lambda: {
+        "app_id": 1, "installation_id": 2, "allowed": ["OWNER/REPOSITORY"],
+    })
+    monkeypatch.setattr(helper, "app_jwt", lambda _: "signed-jwt")
+    monkeypatch.setattr(helper, "request", lambda *args, **kwargs: next(responses))
+    monkeypatch.setattr(helper.os, "geteuid", lambda: 0)
+    assert helper.main(["doctor"]) == 0
+    output = capsys.readouterr().out
+    assert "sensitive-installation-token" not in output
+    assert "signed-jwt" not in output
+    assert "OWNER/REPOSITORY" in output
 
 
 def test_redless_issue_queue_supports_read_only_assessments():

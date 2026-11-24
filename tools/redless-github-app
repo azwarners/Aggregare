@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+exec /usr/bin/python3 /usr/local/lib/aggregare/redless_github_app.py "$@"

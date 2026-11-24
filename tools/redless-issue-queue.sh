@@ -16,13 +16,15 @@ umask 077
 
 usage() {
   cat >&2 <<'EOF'
-Usage: redless-issue-queue [--run] [--assess-only] [--once|--all]
+Usage: redless-issue-queue [--run] [--assess-only] [--once|--all] [--github-app]
        [--endpoint URL] [--model ID] [--profile FILE]
        [--owner NAME] [--label NAME] [--plan FILE] [--retry-assessment]
        [--assessment-max-calls N]
 
 Without --run, discover and preview ready public issues without executing them.
 --plan skips GitHub discovery and executes an existing JSONL plan.
+--github-app uses the installed, allowlisted GitHub App helper for discovery.
+It never falls back to anonymous access if authenticated access is unavailable.
 --assess-only asks Redless for a bounded read-only plan and writes assessment artifacts;
 it never permits code, GitHub, staging, commit, or deployment changes.
 --retry-assessment allows a completed or partial assessment to be reassessed.
@@ -47,6 +49,7 @@ ASSESSMENT_SYNTHESIS_CALL="${ASSESSMENT_SYNTHESIS_CALL:-7}"
 ASSESSMENT_FINALIZATION_CALL="${ASSESSMENT_FINALIZATION_CALL:-10}"
 ROOT="${REDLESS_QUEUE_ROOT:-${HOME}/redless-queue}"
 PLAN=""
+GITHUB_APP=0
 
 while (($#)); do
   case "$1" in
@@ -61,6 +64,7 @@ while (($#)); do
     --owner) (($# >= 2)) || usage; OWNER=$2; shift 2 ;;
     --label) (($# >= 2)) || usage; READY_LABEL=$2; shift 2 ;;
     --plan) (($# >= 2)) || usage; PLAN=$2; shift 2 ;;
+    --github-app) GITHUB_APP=1; shift ;;
     --assessment-max-calls) (($# >= 2)) || usage; ASSESSMENT_MAX_CALLS=$2; shift 2 ;;
     --help|-h) usage 0 ;;
     *) usage ;;
@@ -118,6 +122,10 @@ api_get() {
     --header 'Authorization:' --header 'PRIVATE-TOKEN:' "$1"
 }
 
+github_app() {
+  sudo -n /usr/local/bin/redless-github-app "$@"
+}
+
 ready_filter=''
 if [[ "$READY_MODE" == label ]]; then
   ready_filter='any(.labels[]?; (if type == "object" then .name else . end | ascii_downcase) == ($label|ascii_downcase))'
@@ -129,14 +137,20 @@ blocked_filter='any(.labels[]?; (if type == "object" then .name else . end | asc
 if [[ -z "$PLAN" ]]; then
   repos_file="$ROOT/plans/repositories.jsonl"
   : > "$repos_file"
-  page=1
-  while :; do
-    data=$(api_get "https://api.github.com/users/$OWNER/repos?type=owner&sort=full_name&per_page=100&page=$page") || exit 1
-    jq -e 'type == "array"' <<<"$data" >/dev/null || { echo 'Unexpected repository response' >&2; exit 1; }
-    jq -c --arg owner "$OWNER" '.[] | select(.owner.login == $owner and .private == false and .archived != true and .disabled != true) | {full_name, default_branch}' <<<"$data" >> "$repos_file"
-    [[ $(jq 'length' <<<"$data") -eq 100 ]] || break
-    page=$((page + 1))
-  done
+  if (( GITHUB_APP )); then
+    data=$(github_app repos "$OWNER") || { echo 'GitHub App repository discovery failed; refusing anonymous fallback' >&2; exit 1; }
+    jq -e 'type == "array"' <<<"$data" >/dev/null || { echo 'Unexpected GitHub App repository response' >&2; exit 1; }
+    jq -c '.[] | {full_name, default_branch}' <<<"$data" >> "$repos_file"
+  else
+    page=1
+    while :; do
+      data=$(api_get "https://api.github.com/users/$OWNER/repos?type=owner&sort=full_name&per_page=100&page=$page") || exit 1
+      jq -e 'type == "array"' <<<"$data" >/dev/null || { echo 'Unexpected repository response' >&2; exit 1; }
+      jq -c --arg owner "$OWNER" '.[] | select(.owner.login == $owner and .private == false and .archived != true and .disabled != true) | {full_name, default_branch}' <<<"$data" >> "$repos_file"
+      [[ $(jq 'length' <<<"$data") -eq 100 ]] || break
+      page=$((page + 1))
+    done
+  fi
 
   PLAN="$ROOT/plans/$(date -u +%Y%m%dT%H%M%SZ)-$$.jsonl"
   : > "$PLAN"
@@ -145,11 +159,16 @@ if [[ -z "$PLAN" ]]; then
     branch=$(jq -r '.default_branch' <<<"$repo_entry")
     page=1
     while :; do
-      data=$(api_get "https://api.github.com/repos/$repo/issues?state=open&per_page=100&page=$page") || exit 1
+      if (( GITHUB_APP )); then
+        (( page == 1 )) || break
+        data=$(github_app issues "$repo") || { echo "GitHub App issue discovery failed: $repo" >&2; exit 1; }
+      else
+        data=$(api_get "https://api.github.com/repos/$repo/issues?state=open&per_page=100&page=$page") || exit 1
+      fi
       jq -e 'type == "array"' <<<"$data" >/dev/null || { echo "Unexpected issue response: $repo" >&2; exit 1; }
       jq -c --arg repo "$repo" --arg branch "$branch" --arg label "$READY_LABEL" \
         "[.[] | select(has(\"pull_request\") | not) | select(($blocked_filter) | not) | select($ready_filter) | {repo:\$repo,branch:\$branch,number,title,body,html_url}][]" <<<"$data" >> "$PLAN"
-      [[ $(jq 'length' <<<"$data") -eq 100 ]] || break
+      [[ $(jq 'length' <<<"$data") -eq 100 && "$GITHUB_APP" == 0 ]] || break
       page=$((page + 1))
     done
   done < "$repos_file"

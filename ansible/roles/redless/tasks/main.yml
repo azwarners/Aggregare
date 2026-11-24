@@ -31,8 +31,12 @@
         - /usr/local/bin/aggregare-redless-task
         - /usr/local/bin/aggRedless
         - /usr/local/bin/redless-issue-queue
+        - /usr/local/bin/redless-github-app
+        - /usr/local/bin/redless-github-app-git
         - /usr/local/lib/aggregare/aggregare_redless_task.py
         - /usr/local/lib/aggregare/redless_task_adapter.py
+        - /usr/local/lib/aggregare/redless_github_app.py
+        - /etc/sudoers.d/aggregare-redless-github-app
     - name: Remove the Redless deployment status record
       ansible.builtin.file:
         path: /var/lib/aggregare/status/redless.json
@@ -355,6 +359,39 @@
         owner: root
         group: root
         mode: '0755'
+
+    - name: Install the root-owned GitHub App authentication helper
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../../../tools/redless_github_app.py"
+        dest: /usr/local/lib/aggregare/redless_github_app.py
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install the controlled GitHub App wrapper
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../../../tools/redless-github-app"
+        dest: /usr/local/bin/redless-github-app
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install the root-only ephemeral Git credential helper
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../../../tools/redless-github-app-git"
+        dest: /usr/local/bin/redless-github-app-git
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Allow Redless only controlled read-only GitHub App operations
+      ansible.builtin.template:
+        src: redless-github-app.sudoers.j2
+        dest: /etc/sudoers.d/aggregare-redless-github-app
+        owner: root
+        group: root
+        mode: '0440'
+        validate: /usr/sbin/visudo -cf %s
 
     - name: Verify the short Redless task CLI alias as the unprivileged worker
       ansible.builtin.command:

@@ -32,6 +32,8 @@ Aggregare owns the application catalog, presets, installation/configuration comp
 
 Ready to set up a server? From an Ubuntu Server 26.04 checkout, run `./install.sh` to install the Aggregare default system bundle: AI chat, Memos, HabitSync, Vikunja, OpenIPE, Sidecaravan, and Ladcemas-Lite. The installer always requires a TTY for host-time, identity, LAN, and initial model selection prompts. It collects separate chat and coding model endpoints for Ysparr; reruns reuse the saved protected settings. Choose `kanidm`, `external_oidc`, or `none` at the identity prompt. For Kanidm, also provide an administrator-selected identity FQDN, HTTPS origin, and matching certificate chain/private key; the installer checks DNS and TLS before deployment. The endpoint is saved under `/etc/aggregare/identity.json` and reused on reapply. Apmatia's first-user password is generated once and stored root-only in `/etc/aggregare/apmatia-credentials.json`. For unattended Ansible runs, set the Ysparr upstream variables in protected inventory variables. See the [step-by-step installation guide](docs/deployment/aggregare-server.md) for details.
 
+The optional Redless GitHub App integration uses an installation identity and root-only credentials, never a personal token. Its setup and least-privilege boundaries are documented in [the Redless GitHub App guide](docs/deployment/redless-github-app.md).
+
 The shared contracts and end-to-end examples are in
 [`docs/contracts/phase-1.md`](docs/contracts/phase-1.md). The Phase 2 catalog
 and direct Ansible usage are documented in
