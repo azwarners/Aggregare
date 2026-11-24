@@ -5,6 +5,7 @@ Git calls credential helpers with stdout connected to a pipe. Refusing a termina
 prevents accidental token display by an administrator or an interactive model.
 """
 import os
+import stat
 import sys
 
 sys.path.insert(0, "/usr/local/lib/aggregare")
@@ -12,7 +13,9 @@ from redless_github_app import AppError, allowed, config, installation_token
 
 
 def main() -> int:
-    if os.geteuid() != 0 or os.isatty(sys.stdout.fileno()):
+    # Git provides a FIFO for credential output.  Reject terminals and regular
+    # files so a direct invocation cannot display or persist an installation token.
+    if os.geteuid() != 0 or os.isatty(1) or not stat.S_ISFIFO(os.fstat(1).st_mode):
         raise AppError("Git credentials are available only to a noninteractive root-owned runner")
     if len(sys.argv) != 2 or sys.argv[1] != "get":
         raise AppError("only the Git credential get operation is supported")
@@ -20,6 +23,9 @@ def main() -> int:
     if fields.get("protocol") != "https" or fields.get("host") != "github.com":
         raise AppError("Git credential request is not for github.com HTTPS")
     path = fields.get("path", "").strip("/")
+    # Git sends HTTPS remotes as OWNER/REPOSITORY.git when useHttpPath is set.
+    if path.endswith(".git"):
+        path = path[:-4]
     settings = config()
     allowed(settings, path)
     # This output is Git's private credential pipe, never a terminal or a file.

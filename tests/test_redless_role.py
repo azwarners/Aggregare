@@ -1,6 +1,11 @@
 import json
 from pathlib import Path
 import importlib.util
+from importlib.machinery import SourceFileLoader
+import io
+import sys
+import types
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -147,6 +152,118 @@ def test_github_app_doctor_never_serializes_its_installation_token(capsys, monke
     assert "sensitive-installation-token" not in output
     assert "signed-jwt" not in output
     assert "OWNER/REPOSITORY" in output
+
+
+def load_github_helper():
+    spec = importlib.util.spec_from_file_location("redless_github_app_test", ROOT / "tools/redless_github_app.py")
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    return helper
+
+
+def test_github_app_paginates_repositories_and_preserves_later_allowlisted_result(capsys, monkeypatch):
+    helper = load_github_helper()
+    first = [{"full_name": f"OWNER/ignored-{index}", "default_branch": "main", "owner": {"login": "OWNER"}}
+             for index in range(100)]
+    second = [{"full_name": "OWNER/REPOSITORY", "default_branch": "main", "owner": {"login": "OWNER"}}]
+    calls = []
+
+    def fake_request(path, token, method="GET"):
+        calls.append(path)
+        return {"repositories": first if path.endswith("page=1") else second}
+
+    monkeypatch.setattr(helper, "request", fake_request)
+    helper.repositories({"allowed": ["OWNER/REPOSITORY"]}, "opaque", "OWNER")
+    assert json.loads(capsys.readouterr().out) == [{"default_branch": "main", "full_name": "OWNER/REPOSITORY"}]
+    assert calls == ["/installation/repositories?per_page=100&page=1", "/installation/repositories?per_page=100&page=2"]
+
+
+def test_github_app_paginates_issues_beyond_the_first_hundred(capsys, monkeypatch):
+    helper = load_github_helper()
+    first = [{"number": index, "title": f"issue {index}"} for index in range(1, 101)]
+    later = [{"number": 101, "title": "later issue"}]
+    calls = []
+
+    def fake_request(path, token, method="GET"):
+        calls.append(path)
+        return first if path.endswith("page=1") else later
+
+    monkeypatch.setattr(helper, "request", fake_request)
+    helper.issues({"allowed": ["OWNER/REPOSITORY"]}, "opaque", "OWNER/REPOSITORY")
+    issues = json.loads(capsys.readouterr().out)
+    assert [issue["number"] for issue in issues] == list(range(1, 102))
+    assert calls == ["/repos/OWNER/REPOSITORY/issues?state=open&per_page=100&page=1", "/repos/OWNER/REPOSITORY/issues?state=open&per_page=100&page=2"]
+
+
+def test_github_app_issue_read_fails_closed_for_a_repository_outside_the_allowlist(monkeypatch):
+    helper = load_github_helper()
+    monkeypatch.setattr(helper, "request", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("request must not run")))
+    try:
+        helper.issues({"allowed": ["OWNER/REPOSITORY"]}, "opaque", "OWNER/OTHER")
+    except helper.AppError as error:
+        assert "allowlisted" in str(error)
+    else:
+        raise AssertionError("non-allowlisted issue request was accepted")
+
+
+def test_git_credential_helper_requires_a_noninteractive_allowlisted_https_path(monkeypatch):
+    module = types.ModuleType("redless_github_app")
+    module.AppError = RuntimeError
+    module.config = lambda: {"allowed": ["OWNER/REPOSITORY"]}
+    module.allowed = lambda settings, repo: repo == "OWNER/REPOSITORY" or (_ for _ in ()).throw(RuntimeError("repository is not allowlisted"))
+    module.installation_token = lambda settings: "opaque-token"
+    monkeypatch.setitem(sys.modules, "redless_github_app", module)
+    spec = importlib.util.spec_from_loader(
+        "redless_github_app_git_test", SourceFileLoader("redless_github_app_git_test", str(ROOT / "tools/redless-github-app-git"))
+    )
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    monkeypatch.setattr(helper.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(helper.os, "isatty", lambda _: False)
+    monkeypatch.setattr(helper.os, "fstat", lambda _: types.SimpleNamespace(st_mode=helper.stat.S_IFIFO))
+    monkeypatch.setattr(helper.sys, "argv", ["redless-github-app-git", "get"])
+    monkeypatch.setattr(helper.sys, "stdin", io.StringIO("protocol=https\nhost=github.com\npath=OWNER/REPOSITORY.git\n\n"))
+    output = io.StringIO()
+    monkeypatch.setattr(helper.sys, "stdout", output)
+    assert helper.main() == 0
+    assert output.getvalue().startswith("username=x-access-token\npassword=")
+    monkeypatch.setattr(helper.sys, "stdin", io.StringIO("protocol=https\nhost=github.com\npath=OWNER/OTHER.git\n\n"))
+    monkeypatch.setattr(helper.sys, "stdout", io.StringIO())
+    try:
+        helper.main()
+    except RuntimeError as error:
+        assert "allowlisted" in str(error)
+    else:
+        raise AssertionError("credential request outside the allowlist was accepted")
+    monkeypatch.setattr(helper.os, "isatty", lambda _: True)
+    monkeypatch.setattr(helper.sys, "stdout", io.StringIO())
+    try:
+        helper.main()
+    except RuntimeError as error:
+        assert "noninteractive" in str(error)
+    else:
+        raise AssertionError("interactive credential request was accepted")
+    guide = (ROOT / "docs/deployment/redless-github-app.md").read_text()
+    assert "credential.useHttpPath=true" in guide
+
+
+def test_git_credential_use_http_path_passes_repository_path_without_a_token(tmp_path):
+    received = tmp_path / "received"
+    helper = tmp_path / "credential-helper"
+    helper.write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib, sys\n"
+        f"pathlib.Path({str(received)!r}).write_text(sys.stdin.read())\n"
+        "sys.stdout.write('username=x-access-token\\npassword=fixture-only\\n\\n')\n"
+    )
+    helper.chmod(0o700)
+    result = subprocess.run(
+        ["git", "-c", "credential.useHttpPath=true", "-c", f"credential.helper=!{helper}", "credential", "fill"],
+        input="protocol=https\nhost=github.com\npath=OWNER/REPOSITORY.git\n\n", text=True,
+        capture_output=True, check=True,
+    )
+    assert "password=fixture-only" in result.stdout
+    assert "path=OWNER/REPOSITORY.git" in received.read_text()
 
 
 def test_redless_issue_queue_supports_read_only_assessments():

@@ -74,7 +74,7 @@ def app_jwt(app_id: int) -> str:
     return f"{signing_input}.{b64(signature)}"
 
 
-def request(path: str, token: str, method: str = "GET") -> dict:
+def request(path: str, token: str, method: str = "GET") -> object:
     request_obj = urllib.request.Request(
         f"{API}{path}", method=method,
         headers={"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "Authorization": f"Bearer {token}"},
@@ -92,7 +92,7 @@ def request(path: str, token: str, method: str = "GET") -> dict:
 
 def installation_token(settings: dict) -> str:
     body = request(f"/app/installations/{settings['installation_id']}/access_tokens", app_jwt(settings["app_id"]), "POST")
-    token = body.get("token")
+    token = body.get("token") if isinstance(body, dict) else None
     if not isinstance(token, str) or not token:
         raise AppError("GitHub did not return an installation token")
     return token
@@ -103,13 +103,28 @@ def allowed(settings: dict, repo: str) -> None:
         raise AppError("repository is not allowlisted")
 
 
+def paginated_items(path: str, token: str, key: str | None) -> list[dict]:
+    """Read GitHub's numbered pages without trusting a partial first response."""
+    items: list[dict] = []
+    page = 1
+    separator = "&" if "?" in path else "?"
+    while True:
+        result = request(f"{path}{separator}per_page=100&page={page}", token)
+        values = result if key is None else result.get(key) if isinstance(result, dict) else None
+        if not isinstance(values, list):
+            raise AppError("unexpected GitHub pagination response")
+        items.extend(item for item in values if isinstance(item, dict))
+        if len(values) < 100:
+            return items
+        page += 1
+
+
 def emit(value: object) -> None:
     print(json.dumps(value, separators=(",", ":"), sort_keys=True))
 
 
 def doctor(settings: dict, token: str) -> None:
-    result = request("/installation/repositories?per_page=100", token)
-    installed = {entry.get("full_name") for entry in result.get("repositories", [])}
+    installed = {entry.get("full_name") for entry in paginated_items("/installation/repositories", token, "repositories")}
     emit({"configured": True, "allowlisted_repositories": settings["allowed"],
           "installed_repositories": sorted(repo for repo in settings["allowed"] if repo in installed),
           "unavailable_repositories": sorted(repo for repo in settings["allowed"] if repo not in installed),
@@ -120,17 +135,17 @@ def doctor(settings: dict, token: str) -> None:
 def repositories(settings: dict, token: str, owner: str) -> None:
     if not re.fullmatch(r"[A-Za-z0-9-]+", owner):
         raise AppError("invalid owner")
-    result = request("/installation/repositories?per_page=100", token)
+    installed = paginated_items("/installation/repositories", token, "repositories")
     repos = [{"full_name": item["full_name"], "default_branch": item["default_branch"]}
-             for item in result.get("repositories", [])
+             for item in installed
              if item.get("full_name") in settings["allowed"] and item.get("owner", {}).get("login") == owner]
     emit(sorted(repos, key=lambda item: item["full_name"]))
 
 
 def issues(settings: dict, token: str, repo: str) -> None:
     allowed(settings, repo)
-    result = request(f"/repos/{repo}/issues?state=open&per_page=100", token)
-    emit([item for item in result if "pull_request" not in item])
+    emit([item for item in paginated_items(f"/repos/{repo}/issues?state=open", token, None)
+          if "pull_request" not in item])
 
 
 def main(arguments: list[str]) -> int:
