@@ -6,7 +6,12 @@ This is an operator-assisted setup for authenticated Redless issue reads. It use
 
 In GitHub, create a GitHub App owned by the organization or account that owns the selected repositories. Disable webhooks unless another use requires them. Set repository permissions to **Issues: Read & write**, **Contents: Read & write**, and **Pull requests: Read & write**; **Metadata: Read** is mandatory and is granted automatically. Those write permissions are required only by a future controlled publication runner, not by the helper delivered here. The App cannot act outside repositories where its installation is selected, and it cannot bypass branch protection or organization policy.
 
-Install the App on **Only select repositories** and select exactly the repositories that may be automated. Download the private key directly to the host over an administrator-controlled channel. Do not paste it into chat, a model prompt, inventory, a shell history, source control, or a workspace.
+Choose one repository policy for the local helper:
+
+- **Explicit**: install the App on selected repositories and list each allowed repository in the local configuration.
+- **Installation**: if the App is intentionally installed on every repository for an account, configure one allowed owner. The helper discovers only repositories GitHub reports for that installation and rejects every other owner. Account-wide installation does not authorize any issue for execution; normal queue and approval gates still apply.
+
+Download the private key directly to the host over an administrator-controlled channel. Do not paste it into chat, a model prompt, inventory, a shell history, source control, or a workspace.
 
 On the Aggregare host, as an administrator, create root-only files (replace the sample IDs and repository names):
 
@@ -18,7 +23,17 @@ sudo chown root:root /etc/aggregare/redless-github-app.json
 sudo chmod 0600 /etc/aggregare/redless-github-app.json
 ```
 
-`installation_id` is the numeric installation ID from the GitHub App installation URL. The explicit `allowed_repositories` list is a second fail-closed boundary: a repository must be both installed for the App and listed in this file. Do not use an owner-wide wildcard.
+`installation_id` is the numeric installation ID from the GitHub App installation URL. The default explicit policy is a second fail-closed boundary: a repository must be both installed for the App and listed in this file. Do not use wildcard repository names.
+
+For an intentional installation-wide policy, omit `allowed_repositories` and use an owner boundary instead:
+
+```sh
+sudo sh -c 'umask 077; printf %s "{\"app_id\":12345,\"installation_id\":67890,\"repository_policy\":\"installation\",\"allowed_owner\":\"OWNER\"}" > /etc/aggregare/redless-github-app.json'
+sudo chown root:root /etc/aggregare/redless-github-app.json
+sudo chmod 0600 /etc/aggregare/redless-github-app.json
+```
+
+This mode discovers a newly created repository only after GitHub has granted it to the App installation. It does not trust an account-wide name pattern, accept a cross-owner repository, or make App permissions equivalent to execution approval.
 
 Reapply Aggregare so it installs the controlled wrapper, then test without exposing a credential:
 

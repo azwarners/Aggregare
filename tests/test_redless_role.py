@@ -120,7 +120,8 @@ def test_redless_github_app_helper_is_root_owned_and_constrained():
     assert "isatty" in git_helper
     assert "os.geteuid() != 0" in git_helper
     assert 'sys.argv[1] != "get"' in git_helper
-    assert "password={installation_token(settings)}" in git_helper
+    assert "repository_accessible" in git_helper
+    assert "password={token}" in git_helper
     assert "redless-github-app-git" in tasks
 
 
@@ -142,7 +143,7 @@ def test_github_app_doctor_never_serializes_its_installation_token(capsys, monke
         {"repositories": [{"full_name": "OWNER/REPOSITORY"}]},
     ])
     monkeypatch.setattr(helper, "config", lambda: {
-        "app_id": 1, "installation_id": 2, "allowed": ["OWNER/REPOSITORY"],
+        "app_id": 1, "installation_id": 2, "repository_policy": "explicit", "allowed": ["OWNER/REPOSITORY"],
     })
     monkeypatch.setattr(helper, "app_jwt", lambda _: "signed-jwt")
     monkeypatch.setattr(helper, "request", lambda *args, **kwargs: next(responses))
@@ -173,7 +174,7 @@ def test_github_app_paginates_repositories_and_preserves_later_allowlisted_resul
         return {"repositories": first if path.endswith("page=1") else second}
 
     monkeypatch.setattr(helper, "request", fake_request)
-    helper.repositories({"allowed": ["OWNER/REPOSITORY"]}, "opaque", "OWNER")
+    helper.repositories({"repository_policy": "explicit", "allowed": ["OWNER/REPOSITORY"]}, "opaque", "OWNER")
     assert json.loads(capsys.readouterr().out) == [{"default_branch": "main", "full_name": "OWNER/REPOSITORY"}]
     assert calls == ["/installation/repositories?per_page=100&page=1", "/installation/repositories?per_page=100&page=2"]
 
@@ -189,7 +190,7 @@ def test_github_app_paginates_issues_beyond_the_first_hundred(capsys, monkeypatc
         return first if path.endswith("page=1") else later
 
     monkeypatch.setattr(helper, "request", fake_request)
-    helper.issues({"allowed": ["OWNER/REPOSITORY"]}, "opaque", "OWNER/REPOSITORY")
+    helper.issues({"repository_policy": "explicit", "allowed": ["OWNER/REPOSITORY"]}, "opaque", "OWNER/REPOSITORY")
     issues = json.loads(capsys.readouterr().out)
     assert [issue["number"] for issue in issues] == list(range(1, 102))
     assert calls == ["/repos/OWNER/REPOSITORY/issues?state=open&per_page=100&page=1", "/repos/OWNER/REPOSITORY/issues?state=open&per_page=100&page=2"]
@@ -199,18 +200,82 @@ def test_github_app_issue_read_fails_closed_for_a_repository_outside_the_allowli
     helper = load_github_helper()
     monkeypatch.setattr(helper, "request", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("request must not run")))
     try:
-        helper.issues({"allowed": ["OWNER/REPOSITORY"]}, "opaque", "OWNER/OTHER")
+        helper.issues({"repository_policy": "explicit", "allowed": ["OWNER/REPOSITORY"]}, "opaque", "OWNER/OTHER")
     except helper.AppError as error:
         assert "allowlisted" in str(error)
     else:
         raise AssertionError("non-allowlisted issue request was accepted")
 
 
+def test_github_app_installation_policy_discovers_new_installation_repositories_and_rejects_other_owners(capsys, monkeypatch):
+    helper = load_github_helper()
+    settings = {"repository_policy": "installation", "allowed_owner": "OWNER", "allowed": []}
+    monkeypatch.setattr(helper, "request", lambda *args, **kwargs: {"repositories": [
+        {"full_name": "OWNER/existing", "default_branch": "main", "owner": {"login": "OWNER"}},
+        {"full_name": "OWNER/newly-created", "default_branch": "main", "owner": {"login": "OWNER"}},
+        {"full_name": "OTHER/not-ours", "default_branch": "main", "owner": {"login": "OTHER"}},
+    ]})
+    helper.repositories(settings, "opaque", "OWNER")
+    assert [item["full_name"] for item in json.loads(capsys.readouterr().out)] == ["OWNER/existing", "OWNER/newly-created"]
+    helper.doctor(settings, "opaque")
+    doctor = json.loads(capsys.readouterr().out)
+    assert doctor["repository_policy"] == "installation"
+    assert doctor["allowed_owner"] == "OWNER"
+    assert doctor["installed_repositories"] == ["OWNER/existing", "OWNER/newly-created"]
+    try:
+        helper.issues(settings, "opaque", "OTHER/not-ours")
+    except helper.AppError as error:
+        assert "owner" in str(error)
+    else:
+        raise AssertionError("installation policy allowed a cross-owner repository")
+
+
+def test_github_app_installation_policy_config_and_revoked_access_fail_closed(tmp_path, monkeypatch):
+    helper = load_github_helper()
+    config = tmp_path / "github-app.json"
+    key = tmp_path / "github-app.pem"
+    config.write_text(json.dumps({
+        "app_id": 1, "installation_id": 2,
+        "repository_policy": "installation", "allowed_owner": "OWNER",
+    }))
+    key.write_text("fixture")
+    monkeypatch.setattr(helper, "CONFIG", config)
+    monkeypatch.setattr(helper, "KEY", key)
+    monkeypatch.setattr(helper, "private_file", lambda _: None)
+    assert helper.config() == {
+        "app_id": 1, "installation_id": 2, "repository_policy": "installation",
+        "allowed_owner": "OWNER", "allowed": [],
+    }
+    config.write_text(json.dumps({"app_id": 1, "installation_id": 2, "repository_policy": "installation", "allowed_owner": "OWNER", "allowed_repositories": ["OWNER/repo"]}))
+    try:
+        helper.config()
+    except helper.AppError as error:
+        assert "does not accept" in str(error)
+    else:
+        raise AssertionError("mixed policy configuration was accepted")
+    config.write_text(json.dumps({"app_id": 1, "installation_id": 2, "repository_policy": "all"}))
+    try:
+        helper.config()
+    except helper.AppError as error:
+        assert "repository_policy" in str(error)
+    else:
+        raise AssertionError("unknown repository policy was accepted")
+    explicit = {"repository_policy": "explicit", "allowed": ["OWNER/repo"]}
+    helper.allowed(explicit, "OWNER/repo")
+    monkeypatch.setattr(helper, "request", lambda *args, **kwargs: (_ for _ in ()).throw(helper.AppError("GitHub access denied or unavailable (404)")))
+    try:
+        helper.repositories({"repository_policy": "installation", "allowed_owner": "OWNER", "allowed": []}, "opaque", "OWNER")
+    except helper.AppError as error:
+        assert "denied" in str(error)
+    else:
+        raise AssertionError("revoked installation access was accepted")
+
+
 def test_git_credential_helper_requires_a_noninteractive_allowlisted_https_path(monkeypatch):
     module = types.ModuleType("redless_github_app")
     module.AppError = RuntimeError
-    module.config = lambda: {"allowed": ["OWNER/REPOSITORY"]}
-    module.allowed = lambda settings, repo: repo == "OWNER/REPOSITORY" or (_ for _ in ()).throw(RuntimeError("repository is not allowlisted"))
+    module.config = lambda: {"repository_policy": "explicit", "allowed": ["OWNER/REPOSITORY"]}
+    module.repository_accessible = lambda settings, token, repo: repo == "OWNER/REPOSITORY" or (_ for _ in ()).throw(RuntimeError("repository is not allowlisted"))
     module.installation_token = lambda settings: "opaque-token"
     monkeypatch.setitem(sys.modules, "redless_github_app", module)
     spec = importlib.util.spec_from_loader(

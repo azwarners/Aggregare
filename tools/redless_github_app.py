@@ -44,14 +44,29 @@ def config() -> dict:
         value = json.loads(CONFIG.read_text())
         app_id = int(value["app_id"])
         installation_id = int(value["installation_id"])
-        allowed = value["allowed_repositories"]
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise AppError("invalid GitHub App configuration") from error
-    if app_id <= 0 or installation_id <= 0 or not isinstance(allowed, list) or not allowed:
-        raise AppError("GitHub App configuration requires IDs and a non-empty allowlist")
-    if any(not isinstance(repo, str) or not REPOSITORY.fullmatch(repo) for repo in allowed):
-        raise AppError("GitHub App allowlist contains an invalid repository")
-    return {"app_id": app_id, "installation_id": installation_id, "allowed": sorted(set(allowed))}
+    if app_id <= 0 or installation_id <= 0:
+        raise AppError("GitHub App configuration requires positive app and installation IDs")
+    policy = value.get("repository_policy", "explicit")
+    if policy == "explicit":
+        allowed = value.get("allowed_repositories")
+        if not isinstance(allowed, list) or not allowed:
+            raise AppError("explicit GitHub App policy requires a non-empty allowlist")
+        if any(not isinstance(repo, str) or not REPOSITORY.fullmatch(repo) for repo in allowed):
+            raise AppError("GitHub App allowlist contains an invalid repository")
+        return {"app_id": app_id, "installation_id": installation_id,
+                "repository_policy": policy, "allowed": sorted(set(allowed))}
+    if policy == "installation":
+        owner = value.get("allowed_owner")
+        allowed = value.get("allowed_repositories", [])
+        if not isinstance(owner, str) or not re.fullmatch(r"[A-Za-z0-9-]+", owner):
+            raise AppError("installation GitHub App policy requires a valid allowed_owner")
+        if not isinstance(allowed, list) or allowed:
+            raise AppError("installation GitHub App policy does not accept an explicit allowlist")
+        return {"app_id": app_id, "installation_id": installation_id,
+                "repository_policy": policy, "allowed_owner": owner, "allowed": []}
+    raise AppError("GitHub App repository_policy must be explicit or installation")
 
 
 def b64(value: bytes) -> str:
@@ -99,8 +114,28 @@ def installation_token(settings: dict) -> str:
 
 
 def allowed(settings: dict, repo: str) -> None:
-    if not REPOSITORY.fullmatch(repo) or repo not in settings["allowed"]:
+    if not REPOSITORY.fullmatch(repo):
         raise AppError("repository is not allowlisted")
+    if settings["repository_policy"] == "explicit":
+        if repo not in settings["allowed"]:
+            raise AppError("repository is not allowlisted")
+    elif repo.split("/", 1)[0] != settings["allowed_owner"]:
+        raise AppError("repository owner is not allowed")
+
+
+def allowed_owner(settings: dict, owner: str) -> None:
+    if not re.fullmatch(r"[A-Za-z0-9-]+", owner):
+        raise AppError("invalid owner")
+    if settings["repository_policy"] == "installation" and owner != settings["allowed_owner"]:
+        raise AppError("repository owner is not allowed")
+
+
+def repository_accessible(settings: dict, token: str, repo: str) -> None:
+    """Confirm the installation, rather than the local policy alone, can read repo."""
+    allowed(settings, repo)
+    result = request(f"/repos/{repo}", token)
+    if not isinstance(result, dict) or result.get("full_name") != repo:
+        raise AppError("GitHub installation cannot access repository")
 
 
 def paginated_items(path: str, token: str, key: str | None) -> list[dict]:
@@ -125,20 +160,30 @@ def emit(value: object) -> None:
 
 def doctor(settings: dict, token: str) -> None:
     installed = {entry.get("full_name") for entry in paginated_items("/installation/repositories", token, "repositories")}
-    emit({"configured": True, "allowlisted_repositories": settings["allowed"],
-          "installed_repositories": sorted(repo for repo in settings["allowed"] if repo in installed),
-          "unavailable_repositories": sorted(repo for repo in settings["allowed"] if repo not in installed),
+    if settings["repository_policy"] == "explicit":
+        installed_repositories = sorted(repo for repo in settings["allowed"] if repo in installed)
+        unavailable_repositories = sorted(repo for repo in settings["allowed"] if repo not in installed)
+    else:
+        installed_repositories = sorted(repo for repo in installed if isinstance(repo, str) and repo.startswith(settings["allowed_owner"] + "/"))
+        unavailable_repositories = []
+    result = {"configured": True, "repository_policy": settings["repository_policy"],
+              "allowlisted_repositories": settings["allowed"],
+              "installed_repositories": installed_repositories,
+              "unavailable_repositories": unavailable_repositories,
           "operations": ["read repository metadata", "read issues"],
-          "publication": "not enabled by this helper"})
+          "publication": "not enabled by this helper"}
+    if settings["repository_policy"] == "installation":
+        result["allowed_owner"] = settings["allowed_owner"]
+    emit(result)
 
 
 def repositories(settings: dict, token: str, owner: str) -> None:
-    if not re.fullmatch(r"[A-Za-z0-9-]+", owner):
-        raise AppError("invalid owner")
+    allowed_owner(settings, owner)
     installed = paginated_items("/installation/repositories", token, "repositories")
     repos = [{"full_name": item["full_name"], "default_branch": item["default_branch"]}
              for item in installed
-             if item.get("full_name") in settings["allowed"] and item.get("owner", {}).get("login") == owner]
+             if item.get("owner", {}).get("login") == owner
+             and (settings["repository_policy"] == "installation" or item.get("full_name") in settings["allowed"])]
     emit(sorted(repos, key=lambda item: item["full_name"]))
 
 
